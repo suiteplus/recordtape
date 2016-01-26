@@ -1,0 +1,16 @@
+{
+  "name": "recordtape",
+  "version": "1.0.0",
+  "description": "recordtype wrapper",
+  "main": "src/record.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://willian_k@bitbucket.org/willian_k/recordtape.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "homepage": "https://bitbucket.org/willian_k/recordtape#readme"
+}
