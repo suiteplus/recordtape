@@ -251,11 +251,13 @@ function recordFactory(meta) {
             _this._fieldCache[field] = value;
             _this._submitCache = _this._submitCache || {};
             _this._submitCache[field] = value;
+            return this;
         } ,
 
         submit : function() {
             _cache[(Record.code + '|' + this.id)] = this;
-            return this._callers.submit(this);
+            this._callers.submit(this);
+            return this;
         } ,
 
         sublist : function(name,clas) {
