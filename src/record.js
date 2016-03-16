@@ -282,6 +282,29 @@ function recordFactory(meta) {
 
     };
 
+    Record.expose = function(fields) {
+        (fields||[]).forEach( function(field) {
+            if (!Record.fld[field]) throw nsm.error('Record.expose: campo ' + field + ' não está definido neste registro.' );
+            Object.defineProperty(Record, field , {
+                enumerable : false ,
+                get : function() {
+                    return this.f(field);
+                } ,
+                set : function(value) {
+                    return this.fset(field,value);
+                }
+            })
+        });
+    }
+
+    Record.exposeAll = function() {
+        var fields = [];
+        for (var it in Record.fld) {
+            fields.push(it)
+        }
+        return Record.expose(fields);
+    }
+
     return Record;
 
 }

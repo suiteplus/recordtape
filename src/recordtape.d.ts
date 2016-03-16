@@ -1,6 +1,6 @@
 declare interface RecordMeta {
     fld : any;
-    sublists : any;
+    sublists? : any;
     code : string;
 }
 
@@ -15,6 +15,8 @@ declare class Record {
     static code : string;
     static fld : any;
     static sublists : string;
+    static expose( fields : string[] ) : void;
+    static exposeAll() : void;
     
     meta : RecordMeta
     code : string;
@@ -23,7 +25,7 @@ declare class Record {
     
     doCache : boolean;
     
-    static create(code:string) : Record;
+    static create(code?:string) : Record;
     static fromId(id:number, opts? : RecordOpts) : Record;
     static fromRecord(nlobjRecord:any) : Record;
     static fromRecordSublist(spmSublist:any, id:number) : Record;
