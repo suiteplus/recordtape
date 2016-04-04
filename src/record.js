@@ -275,7 +275,7 @@ function recordFactory(meta) {
                 return out;
             }
             else {
-                var field = name; //clas.sublists[name];
+                var field = clas.sublists[name] || name;
                 if (field.substr(0, 'recmach'.length) == 'recmach')
                     field = field.substr('recmach'.length);
                 var res = nlapiSearchRecord(clas.code, null, [field, 'anyof', this.id], nsm.Search.searchCols(_fieldConf[clas.code] || [])) || [];
