@@ -92,3 +92,20 @@ t1.fset('campo1', 1);
 t1.submit(); //necessário
 t1.delete();
 ```
+
+
+### Expose
+
+```javascript
+Transaction.expose(['entity']);
+Transaction.exposeAll();
+
+var t1 = Transaction.fromId(123);
+console.log(t1.entity);
+var obj = t1.json();
+```
+
+Permite o acesso de leitura a determinadas propriedades diretamente no objeto sem o uso de `.f()`
+para o factory indicado.
+
+`.json()` extrai os itens expostos para um objeto plano.

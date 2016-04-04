@@ -39,6 +39,7 @@ declare class Record {
     f(field:string) : string;
     fjoin(src:string,field:string) : string;
     fset(field:string,value:any) : Record;
+    json() : any;
     submit() : Record;
     delete() : void;
     sublist(name : string, clas:any) : Record[];

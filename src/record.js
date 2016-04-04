@@ -112,6 +112,7 @@ function recordFactory(meta) {
         doCache : true ,
         _fieldCache : null ,
         _origin : null,
+        _exposed : [],
         create : function(code) {
             var out = Object.create(Record);
             out._origin = 'record';
@@ -254,6 +255,14 @@ function recordFactory(meta) {
             return this;
         } ,
 
+        json : function() {
+            var that = this;
+            return this._exposed.reduce( function(bef,field) {
+                bef[field] = field;
+                return bef;
+            }, {});
+        } ,
+
         submit : function() {
             _cache[(Record.code + '|' + this.id)] = this;
             this._callers.submit(this);
@@ -290,6 +299,7 @@ function recordFactory(meta) {
     Record.expose = function(fields) {
         (fields||[]).forEach( function(field) {
             if (!Record.fld[field]) throw nsm.error('Record.expose: campo ' + field + ' não está definido neste registro.' );
+            Record._exposed.push(field);
             Object.defineProperty(Record, field , {
                 enumerable : false ,
                 get : function() {
