@@ -108,7 +108,7 @@ function recordFactory(meta) {
             }
             return out;
         })() ,
-        sublists : meta.sublists ,
+        sublists : meta.sublists || {} ,
         doCache : true ,
         _fieldCache : null ,
         _origin : null,
