@@ -40,6 +40,7 @@ declare class Record {
     fjoin(src:string,field:string) : string;
     fset(field:string,value:any) : Record;
     submit() : Record;
+    delete() : void;
     sublist(name : string, clas:any) : Record[];
     
 }

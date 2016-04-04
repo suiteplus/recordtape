@@ -260,6 +260,11 @@ function recordFactory(meta) {
             return this;
         } ,
 
+        delete : function() {
+            if (_cache[(Record.code + '|' + this.id)]) delete _cache[(Record.code + '|' + this.id)];
+            return nlapiDeleteRecord(this.code, this.id);
+        } ,
+
         sublist : function(name,clas) {
             if (this._origin == 'record') {
                 var sl = new nsm.Record.Sublist(this.record, name);

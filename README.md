@@ -90,4 +90,5 @@ var terms = t1.sublist('salesterm', SalesTerm);
 ```javascript
 t1.fset('campo1', 1);
 t1.submit(); //necessário
+t1.delete();
 ```
