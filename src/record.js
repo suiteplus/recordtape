@@ -258,7 +258,7 @@ function recordFactory(meta) {
         json : function() {
             var that = this;
             return this._exposed.reduce( function(bef,field) {
-                bef[field] = field;
+                bef[field] = that.f(field);
                 return bef;
             }, {});
         } ,
