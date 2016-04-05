@@ -257,10 +257,12 @@ function recordFactory(meta) {
 
         json : function() {
             var that = this;
-            return this._exposed.reduce( function(bef,field) {
+            var out = this._exposed.reduce( function(bef,field) {
                 bef[field] = that.f(field);
                 return bef;
             }, {});
+            out.id = that.id;
+            return out;
         } ,
 
         submit : function() {
