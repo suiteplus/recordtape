@@ -219,7 +219,6 @@ function recordFactory(meta) {
                     throw Base.error('Campo ' + field + ' não cadastrado.');
             }else field = this.fld[field];
             var _this = this;
-            nsm.Base.log('f() ' + field);
             if (this._fieldCache[field]) return this._fieldCache[field];
             var fields = _fieldConf[Record.code] || [];
             var found = ~fields.indexOf(field);
