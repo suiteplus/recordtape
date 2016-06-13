@@ -22,16 +22,21 @@ exports.setWindow = function (wind) {
 };
 exports.factory = recordFactory;
 function recordFactory(meta) {
-    var __fldvals = (function () {
-        var out = [];
+    var __fldInverseMemo;
+    function fldInverse() {
+        if (__fldInverseMemo)
+            return __fldInverseMemo;
+        var out = {};
         for (var it in meta.fld) {
-            out.push(meta.fld[it]);
+            out[meta.fld[it]] = it;
         }
-        return out;
-    })();
+        __fldInverseMemo = out;
+        return __fldInverseMemo;
+    }
     var __sublists = meta.sublists || {};
     var __doCache = true;
     var __exposed = [];
+    var __customMethods = {};
     //_fieldCache : {} ,
     //_origin : null,
     //record : <nlobjRecord>null ,
@@ -40,13 +45,12 @@ function recordFactory(meta) {
         //instance methods below
         state.fieldCache = state.fieldCache || {};
         state.submitCache = state.submitCache || {};
-        var out = {
+        var rec = {
             f: function (field) {
                 if (!field)
                     throw console.error('Record.f recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    if (!__fldvals)
-                        throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw console.error('Campo ' + field + ' não cadastrado.');
                 }
                 else {
                     field = meta.fld[field];
@@ -58,81 +62,121 @@ function recordFactory(meta) {
                 //se houver fieldconf, carregar todos os campos para o cache
                 if (fields.length && found) {
                     fields.forEach(function (f) {
-                        state.fieldCache[f] = state.callers.f(out, f);
+                        state.fieldCache[f] = state.callers.f(rec, f);
                     });
                     return state.fieldCache[field];
                 }
                 else {
                     __fieldConf[meta.code] = __fieldConf[meta.code] || [];
                     __fieldConf[meta.code].push(field);
-                    state.fieldCache[field] = state.callers.f(out, field);
+                    state.fieldCache[field] = state.callers.f(rec, field);
                     return state.fieldCache[field];
                 }
             },
+            fraw: function (name) {
+                var field = fldInverse()[name];
+                if (!field)
+                    throw nlapiCreateError('fraw', "Field " + name + " not fouund.");
+                return rec.f(field);
+            },
             fjoin: function (src, field) {
-                return out.f(src + '.' + field);
+                return rec.f(src + '.' + field);
             },
             fset: function (field, value) {
                 if (Array.isArray(field))
                     throw console.error('fset não recebe array.');
                 if (!meta.fld[field]) {
-                    if (!~__fldvals.indexOf(field))
-                        throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw console.error('Campo ' + field + ' não cadastrado.');
                 }
                 else
                     field = meta.fld[field];
                 state.fieldCache[field] = value;
                 state.submitCache = state.submitCache || {};
                 state.submitCache[field] = value;
-                return this;
+                return rec;
+            },
+            put: function (data) {
+                if (Array.isArray(data))
+                    throw nlapiCreateError('RTAPE_PUT', 'Array not expected in rtape#put');
+                for (var it in data) {
+                    rec.fset(it, data[it]);
+                }
+                return rec;
             },
             json: function () {
-                var that = this;
-                var out = this._exposed.reduce(function (bef, field) {
-                    bef[field] = that.f(field);
+                var jsout = __exposed.reduce(function (bef, field) {
+                    bef[field] = rec.f(field);
                     return bef;
                 }, {});
-                out.id = that.id;
-                return out;
+                jsout.id = rec.id;
+                return jsout;
             },
             submit: function () {
-                _cache[(meta.code + '|' + this.id)] = this;
-                this._callers.submit(this);
-                return this;
+                _cache[(meta.code + '|' + rec.id)] = rec;
+                state.callers.submit(rec);
+                return rec;
             },
             delete: function () {
-                if (_cache[(meta.code + '|' + this.id)])
-                    delete _cache[(meta.code + '|' + this.id)];
-                return nlapiDeleteRecord(this.code, this.id);
+                if (_cache[(meta.code + '|' + state.id)])
+                    delete _cache[(meta.code + '|' + state.id)];
+                return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             },
-            sublist: function (name, clas) {
-                if (this._origin == 'record') {
-                    var sl = Sublist.fromRecord(this.record, name);
+            sublist: function (name, tgtclass) {
+                if (!tgtclass)
+                    throw nlapiCreateError('sublist', 'Missing 2nd parameter.');
+                if (state.origin == 'record') {
+                    var sl = Sublist.fromRecord(state.record, name);
                     var out = [];
                     for (var it = 1; it <= sl.count(); it++) {
-                        out.push(clas.fromRecordSublist(sl, sl.value('id', it)));
+                        out.push(tgtclass.fromRecordSublist(sl, sl.value('id', it)));
                     }
                     return out;
                 }
                 else {
-                    var field = this.sublists[name] || name;
+                    var field = meta.sublists[name];
+                    if (!field)
+                        throw nlapiCreateError('sublist', "Unregistered sublist " + name + ".");
                     if (field.substr(0, 'recmach'.length) == 'recmach')
                         field = field.substr('recmach'.length);
-                    var res = nlapiSearchRecord(clas.code, null, [field, 'anyof', this.id], Search.cols(__fieldConf[clas.code] || [])) || [];
+                    var res = nlapiSearchRecord(tgtclass.meta.code, null, [field, 'anyof', state.id], Search.cols(__fieldConf[tgtclass.meta.code] || [])) || [];
                     return res.map(function (r) {
-                        return clas.fromSearchResult(r);
+                        return tgtclass.fromSearchResult(r);
                     });
                 }
             },
             get id() { return Number(state.id); },
+            get fld() { return meta.fld; },
+            get code() { return meta.code; },
+            getStatic: function () { return Static; },
             state: state,
             meta: meta
         };
-        return out;
+        __exposed.forEach(function (name) {
+            Object.defineProperty(rec, name, {
+                enumerable: false,
+                get: function () {
+                    return rec.f(name);
+                },
+                set: function (value) {
+                    return rec.fset(name, value);
+                }
+            });
+        });
+        for (var it in __customMethods) {
+            rec[it] = function () {
+                var args = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    args[_i - 0] = arguments[_i];
+                }
+                args = [rec].concat(args);
+                return __customMethods[it].apply(rec, args);
+            };
+        }
+        return rec;
     }
     var Static = {
         getCode: function (id) {
-            return '';
+            return meta.code;
         },
         create: function () {
             return build({
@@ -190,16 +234,16 @@ function recordFactory(meta) {
             return out;
         },
         fromSearchResult: function (res) {
-            if (_cache[(meta.code + '|' + res.getId())])
-                return _cache[(meta.code + '|' + res.getId())];
+            if (_cache[meta.code + '|' + res.id])
+                return _cache[meta.code + '|' + res.id];
             var out = build({
-                code: Static.getCode(res.getId()),
+                code: Static.getCode(res.id),
                 origin: 'search',
                 callers: _callers.Search,
                 result: res,
-                id: Number(res.getId()),
+                id: Number(res.id),
             });
-            _cache[(meta.code + '|' + res.getId())] = out;
+            _cache[meta.code + '|' + res.id] = out;
             return out;
         },
         fromCurrentClient: function (wind) {
@@ -217,6 +261,20 @@ function recordFactory(meta) {
             _cache[meta.code + '|' + id] = out;
             return out;
         },
+        search: function (arg1, arg2, arg3) {
+            var opts, filters, columns;
+            if (Array.isArray(arg1)) {
+                opts = {};
+                filters = arg1;
+                columns = arg3;
+            }
+            else {
+                opts = arg1;
+                filters = arg2;
+                columns = arg3;
+            }
+            return Search.search(opts, Static, filters, columns);
+        },
         curryf: function (field) {
             return function (id) {
                 var inst = Static.fromId(id);
@@ -227,40 +285,35 @@ function recordFactory(meta) {
             var sid = nlapiGetContext().getScriptId();
             var did = 'customdeploy' + sid.substr('customscript'.length);
             var res = nlapiSearchRecord('scriptdeployment', null, ['scriptid', 'is', did]);
-            var rec = nlapiLoadRecord('scriptdeployment', res[0].getId());
+            var rec = nlapiLoadRecord('scriptdeployment', res[0].id);
             rec.setFieldValue('custscript_fieldconf', JSON.stringify(__fieldConf));
             nlapiSubmitRecord(rec);
-        }
-    };
-    /*
-        Record.expose = function(fields) {
-            (fields||[]).forEach( function(field) {
-                if (!Record.fld[field]) throw nlapiCreateError('recordExpose', 'Campo ' + field + ' não está definido neste registro.' );
-                Record._exposed.push(field);
-                Object.defineProperty(Record, field , {
-                    enumerable : false ,
-                    get : function() {
-                        return this.f(field);
-                    } ,
-                    set : function(value) {
-                        return this.fset(field,value);
-                    }
-                })
+        },
+        expose: function (fields) {
+            (fields || []).forEach(function (field) {
+                if (!meta.fld[field])
+                    throw nlapiCreateError('recordExpose', 'Campo ' + field + ' não está definido neste registro.');
+                __exposed.push(field);
             });
-        }
-    
-        Record.exposeAll = function() {
+        },
+        exposeAll: function () {
             var fields = [];
-            for (var it in Record.fld) {
-                fields.push(it)
+            for (var it in meta.fld) {
+                fields.push(it);
             }
-            return Record.expose(fields);
-        }
-    
-        return Record;
-    */
+            return Static.expose(fields);
+        },
+        registerMethod: function (name, method) {
+            __customMethods[name] = method;
+        },
+        get code() { return meta.code; },
+        get fld() { return meta.fld; },
+        meta: meta
+    };
+    return Static;
 }
 exports.recordFactory = recordFactory;
+var dummyStatic = null && recordFactory(1);
 var _callers = {
     Id: {
         f: function (rec, field) { return nlapiLookupField(rec.meta.code, rec.id, field); },
@@ -289,7 +342,8 @@ var _callers = {
     },
     Search: {
         f: function (rec, field) {
-            if (~(rec.state.result.getAllColumns().map(function (c) { return c.getName(); }) || []).indexOf(field)) {
+            var allcols = rec.state.result.getAllColumns() || [];
+            if (~(allcols.map(function (c) { return c.getName(); })).indexOf(field)) {
                 return rec.state.result.getValue(field);
             }
             return _callers.Id.f(rec, field);

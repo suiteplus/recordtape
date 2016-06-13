@@ -427,12 +427,13 @@ interface nlobjRecord{
 
 interface nlobjSearchResult{
 	getAllColumns() : nlobjSearchColumn[];
-	getId() : string;
+	//getId() : string;
 	getRecordType() : string;
 	getText(column : nlobjSearchColumn) : string;
 	getText(name : string, join? : string, summary? : string) : string;
 	getValue(name : string, join? : string, summary? : string) : string;
 	getValue(column : nlobjSearchColumn) : string;
+	id : number;
 }
 
 interface nlobjRequest{

@@ -1,27 +1,41 @@
-export function initSearch( rtape ) {
+import Rtape = require('./recordtape')
 
-    rtape.search = function(filters, columns) {
-        filters = transformFilters(filters)
-        columns = transformColumns(columns);
-        return nlapiSearchRecord(rtape.code, null, filters, columns)
-    }
+export interface searchOpts {
+    //do not transform search filters and columns if false
+    noTransformFilters? : boolean;
+    noTransformColumns? : boolean;
+    //perform big search
+    big? : boolean;
+    allFields? : boolean;
+}
 
+export function search( opts:searchOpts, rtape:Rtape.RtapeStatic, filters:(string|number)[],
+        columns:(string|nlobjSearchColumn)[] ) {
 
-    function transformFilters(filters) {
-        return filters.map( (item,idx) => {
+    opts = opts || {};
+    columns = columns || [];
+    filters = filters || [];
+    filters = (!opts.noTransformFilters) ? transformFilters(filters) : filters;
+    columns = (!opts.noTransformColumns) ? transformColumns(columns) : columns;
+
+    function transformFilters(fs) {
+        return fs.map( (item,idx) => {
             if (Array.isArray(item)) return transformFilters(item)
             if (item == 'and' || item == 'or') return item;
             if (!idx) {
                 if (~item.indexOf('.')) {
                     let split = item.split('.')
-                    let p0 = rtape.fld[split[0]]
+                    let p0 = rtape.meta.fld[split[0]]
                     if (!p0) throw nlapiCreateError('transformFilters-2',`Field ${p0} not found`)
                     return `p0.${split[1]}`
                 }
-                let out = rtape.fld[item] 
+                let out = rtape.meta.fld[item] 
                 if (!out) throw nlapiCreateError('transformFilters-1',`Field ${item} not found`)
                 return out
+            } else if (idx == 1 || idx == 2) {
+                return item
             }
+
         })
     }
 
@@ -39,6 +53,39 @@ export function initSearch( rtape ) {
         })
     }
 
+    if (opts.allFields) {
+        columns = []
+        for ( var it in rtape.meta.fld ) {
+            columns.push( new nlobjSearchColumn(rtape.meta.fld[it]) )
+        }
+    }
+
+    var search = {
+        get filters() { 
+            return filters
+        } ,
+        get columns() {
+            return columns
+        } ,
+        run() : Rtape.tRecord[] {
+            var f:any = filters.length ? filters : undefined
+            var c:any = columns.length ? columns : undefined
+            var out = (opts.big) ?
+                (bigSearch(rtape.meta.code, f, c) || []) :
+                (nlapiSearchRecord(rtape.meta.code, null, f, c) || [])
+            return out.map( item => rtape.fromSearchResult(item) )
+        } ,
+        runRaw() : nlobjSearchResult[] {
+            var f:any = filters.length ? filters : undefined
+            var c:any = columns.length ? columns : undefined
+            var out = (opts.big) ?
+                (bigSearch(rtape.meta.code, f, c) || []) :
+                (nlapiSearchRecord(rtape.meta.code, null, f, c) || [])
+            return out;
+        }
+    }
+
+    return search
 
 }
 

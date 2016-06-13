@@ -43,7 +43,7 @@ function compileTypescript() {
 
 function package() {
     console.log('package')
-    var s = gulp.src('./intermediate/record.js')
+    var s = gulp.src('./intermediate/recordtape.js')
         .pipe(scripts.package())
         .pipe(scripts.addGlobals())
         .pipe(gulp.dest('dist'))
