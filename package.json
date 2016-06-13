@@ -1,9 +1,8 @@
 {
   "name": "recordtape",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "recordtype wrapper",
   "main": "src/record.js",
-  "typings" : "src/recordtape.d.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -13,5 +12,10 @@
   },
   "author": "",
   "license": "ISC",
-  "homepage": "https://bitbucket.org/willian_k/recordtape#readme"
+  "homepage": "https://bitbucket.org/willian_k/recordtape#readme",
+  "devDependencies": {
+    "gulp": "^3.9.1",
+    "gulp-scripts": "git@bitbucket.org:suiteplus/gulp-scripts.git",
+    "gulp-typescript": "^2.13.6"
+  }
 }
