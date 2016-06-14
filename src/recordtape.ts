@@ -16,7 +16,7 @@ try {
     __fieldConf = JSON.parse(conf) || {};
 }
 catch (e) { 
-    nlapiLogExecution('','não carregou baseconf');
+    console.error('ERROR','não carregou baseconf');
 }
 
 var _window;
@@ -26,7 +26,8 @@ export var setWindow = function(wind) {
 
 interface FactoryMeta {
     code : string;
-    fld : any;
+    fld? : any;
+    idField? : string;
     sublists? : any;
 } 
 
@@ -50,13 +51,15 @@ interface internalState {
 export interface tRecord {
     f(field:string) : string;
     fraw(field:string) : string;
+    ftext(field:string) : string;
+    ftextraw(field:string) : string;
     fjoin(src:string, field:string) : string;
     fset(src:string,field:string) : tRecord;
     put(src:any) : tRecord;
     json() : any;
     submit() : tRecord;
     delete() : void;
-    sublist(name:string, clas:any) : tRecord[];
+    sublist(name:string, clas:RtapeStatic) : tRecord[];
 
     id : number;
     state : internalState;
@@ -66,8 +69,11 @@ export interface tRecord {
     getStatic() : RtapeStatic;
 }
 
+
 export var factory = recordFactory;
 export function recordFactory(meta:FactoryMeta) {
+
+    meta.fld = meta.fld || {}
 
     var __fldInverseMemo
     function fldInverse() {
@@ -123,6 +129,21 @@ export function recordFactory(meta:FactoryMeta) {
                 }            
             } ,
 
+            ftext(field) {
+                if (!field) throw console.error('Record.f recebeu parâmetro vazio.');
+                if (!meta.fld[field]) {
+                    throw console.error('Campo ' + field + ' não cadastrado.');
+                } else {
+                    field = meta.fld[field];
+                }
+                return state.callers.ftext(rec, field);            
+            } ,
+
+            ftextraw(name:string) {
+                var field = fldInverse()[name]
+                if (!field) throw nlapiCreateError('ftextraw', `Field ${name} not fouund.`)
+                return rec.ftext(field)                
+            } ,
 
             fraw(name:string) {
                 var field = fldInverse()[name]
@@ -179,18 +200,22 @@ export function recordFactory(meta:FactoryMeta) {
             } ,
 
             sublist(name:string,tgtclass:RtapeStatic) {
-                if (!tgtclass) throw nlapiCreateError('sublist', 'Missing 2nd parameter.')
+                if (!tgtclass) {
+                    throw nlapiCreateError('sublist', 'Missing 2nd parameter.')
+                }
+                var field = meta.sublists[name];
+                if (!field) throw nlapiCreateError('sublist', `Unregistered sublist ${name}.`)
+
                 if (state.origin == 'record') {
-                    var sl = Sublist.fromRecord(state.record, name);
-                    var out = [];
-                    for (var it = 1; it <= sl.count(); it++) {
-                        out.push(tgtclass.fromRecordSublist(sl, sl.value('id', it)));
+                    let out = [];
+                    var wrap = Sublist.fromRtape(rec, tgtclass, name)
+                    for (var it = 1; it <= wrap.count() ; it++) {
+                        let item = tgtclass.fromRecordSublist( wrap, wrap.idFromLine(it) )
+                        out.push( item );
                     }
                     return out;
                 }
                 else {
-                    var field = meta.sublists[name];
-                    if (!field) throw nlapiCreateError('sublist', `Unregistered sublist ${name}.`)
                     if (field.substr(0, 'recmach'.length) == 'recmach')
                         field = field.substr('recmach'.length);
                     var res = nlapiSearchRecord(tgtclass.meta.code, null, 
@@ -284,7 +309,7 @@ export function recordFactory(meta:FactoryMeta) {
         } ,
 
         
-        fromRecordSublist (sl,id) : tRecord {
+        fromRecordSublist (sl:Sublist.tSublist, id) : tRecord {
             if (_cache[(meta.code + '|' + id)])
                 return _cache[(meta.code + '|' + id)];
             var out = build({
@@ -388,7 +413,9 @@ export function recordFactory(meta:FactoryMeta) {
         get code() { return meta.code } ,
         get fld() { return meta.fld } ,
 
-        meta : meta 
+        meta : meta , 
+
+        idField : meta.idField || 'id'
 
     };
 
@@ -401,12 +428,16 @@ export type RtapeStatic = typeof dummyStatic
 
 interface Caller {
     f(rec:tRecord,field:string) : string;
+    ftext(rec:tRecord,field:string) : string;
     submit(rec:tRecord) : void;
 }
 
 var _callers = {
     Id: <Caller>{
         f: function (rec, field) { return nlapiLookupField(rec.meta.code, rec.id, field); },
+        ftext(rec,field) {
+            throw nlapiCreateError('ftext', 'not implemented')
+        },
         submit: function (rec) {
             var fields = [];
             var values = [];
@@ -421,6 +452,9 @@ var _callers = {
     Record: <Caller>{
         f: function (rec, field) {
             return rec.state.record.getFieldValue(field);
+        },
+        ftext(rec,field) {
+            return rec.state.record.getFieldText(field)
         },
         submit: function (rec) {
             for ( var it in rec.state.submitCache) {
@@ -438,6 +472,13 @@ var _callers = {
             }
             return _callers.Id.f(rec, field);
         },
+        ftext(rec,field) {
+            var allcols = rec.state.result.getAllColumns() || []
+            if (~(allcols.map( c => c.getName() )).indexOf(field)) {
+                return rec.state.result.getText(field);
+            }
+            return _callers.Id.ftext(rec, field);
+        } ,
         submit: function (rec) {
             return _callers.Id.submit(rec);
         }
@@ -446,6 +487,9 @@ var _callers = {
         f: function (rec, field) {
             return rec.state.objSublist.value(field, rec.state.line);
         },
+        ftext(rec,field) {
+            return rec.state.objSublist.text(field, rec.state.line);
+        } ,
         submit: function () {
             throw 'Não implementado';
             /*
@@ -464,6 +508,9 @@ var _callers = {
         f: function (rec, field) {
             return rec.state.window.nlapiGetFieldValue(field);
         },
+        ftext(rec,field) {
+            return rec.state.window.nlapiGetFieldText(field);
+        } ,
         submit: function (rec) {
             for ( var it in rec.state.submitCache) {
                 rec.state.window.nlapiSetFieldValue(it,rec.state.submitCache[it]);
@@ -472,12 +519,3 @@ var _callers = {
         }
     }
 };
-
-
-function build<K,V>(methodsObj:K, stateObj:V) : K & V {
-    var out = Object.create(methodsObj)
-    for ( var it in stateObj ) {
-        out[it] = stateObj[it]
-    }
-    return out;
-}
