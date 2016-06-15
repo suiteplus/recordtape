@@ -158,27 +158,42 @@ exports.cols = searchCols;
 
 },{}],3:[function(require,module,exports){
 "use strict";
-function fromRtape(parentRtape, childRtapeStatic, slname) {
+function fromRtape(parentRtape, childRtapeStatic, slRef) {
     if (parentRtape.state.origin != 'record')
         throw nlapiCreateError('sublist', 'not implemented');
     var objRecord = parentRtape.state.record;
-    return {
+    var slName = parentRtape.meta.sublists[slRef];
+    if (!slName)
+        throw nlapiCreateError('sublist', "Sublist ref " + slRef + " not found.");
+    var objSublist = {
         count: function () {
-            return objRecord.getLineItemCount(slname);
+            return objRecord.getLineItemCount(slName);
         },
         value: function (field, line) {
-            return objRecord.getLineItemValue(slname, field, line);
+            return objRecord.getLineItemValue(slName, field, line);
         },
         text: function (field, line) {
-            return objRecord.getLineItemText(slname, field, line);
+            return objRecord.getLineItemText(slName, field, line);
         },
         idFromLine: function (line) {
             return this.value(childRtapeStatic.idField, line);
         },
         lineFromId: function (id) {
-            return objRecord.findLineItemValue(slname, childRtapeStatic.idField, id);
+            //não funciona direito
+            //return objRecord.findLineItemValue(slName, childRtapeStatic.idField, id)
+            var count = this.count();
+            var out = -1;
+            for (var it = 1; it <= count; it++) {
+                var value = objSublist.value(childRtapeStatic.idField, it);
+                if (value == id) {
+                    out = it;
+                    break;
+                }
+            }
+            return out;
         }
     };
+    return objSublist;
 }
 exports.fromRtape = fromRtape;
 var dummy = null && fromRtape(0, 1, 2);
@@ -209,6 +224,9 @@ exports.setWindow = function (wind) {
 exports.factory = recordFactory;
 function recordFactory(meta) {
     meta.fld = meta.fld || {};
+    meta.sublists = meta.sublists || {};
+    meta.fld.externalid = 'externalid';
+    meta.fld.internalid = 'internalid';
     var __fldInverseMemo;
     function fldInverse() {
         if (__fldInverseMemo)
@@ -223,7 +241,9 @@ function recordFactory(meta) {
     var __sublists = meta.sublists || {};
     var __doCache = true;
     var __exposed = [];
-    var __customMethods = {};
+    var __customMethods = __preRegisterMethod[meta.code] || {};
+    if (__preRegisterMethod[meta.code])
+        delete __preRegisterMethod[meta.code];
     //_fieldCache : {} ,
     //_origin : null,
     //record : <nlobjRecord>null ,
@@ -274,13 +294,13 @@ function recordFactory(meta) {
             ftextraw: function (name) {
                 var field = fldInverse()[name];
                 if (!field)
-                    throw nlapiCreateError('ftextraw', "Field " + name + " not fouund.");
+                    throw nlapiCreateError('ftextraw', "Field " + name + " not found.");
                 return rec.ftext(field);
             },
             fraw: function (name) {
                 var field = fldInverse()[name];
                 if (!field)
-                    throw nlapiCreateError('fraw', "Field " + name + " not fouund.");
+                    throw nlapiCreateError('fraw', "Field " + name + " not found.");
                 return rec.f(field);
             },
             fjoin: function (src, field) {
@@ -298,6 +318,12 @@ function recordFactory(meta) {
                 state.submitCache = state.submitCache || {};
                 state.submitCache[field] = value;
                 return rec;
+            },
+            fsetraw: function (name, value) {
+                var field = fldInverse()[name];
+                if (!field)
+                    throw nlapiCreateError('fraw', "Field " + name + " not found.");
+                return rec.fset(field, value);
             },
             put: function (data) {
                 if (Array.isArray(data))
@@ -517,10 +543,28 @@ function recordFactory(meta) {
         meta: meta,
         idField: meta.idField || 'id'
     };
+    __moduleCache[meta.code] = Static;
     return Static;
 }
 exports.recordFactory = recordFactory;
 var dummyStatic = null && recordFactory(1);
+var __moduleCache = {};
+var __preRegisterMethod = {};
+function module(code) {
+    if (__moduleCache[code])
+        return __moduleCache[code];
+    __preRegisterMethod[code] = {};
+    var Stub = {
+        stub: true,
+        registerMethod: function (name, method) {
+            __preRegisterMethod[code][name] = method;
+        },
+        get code() { return code; },
+    };
+    __moduleCache[code] = Stub;
+    return __moduleCache[code];
+}
+exports.module = module;
 var _callers = {
     Id: {
         f: function (rec, field) { return nlapiLookupField(rec.meta.code, rec.id, field); },

@@ -23,6 +23,9 @@ exports.setWindow = function (wind) {
 exports.factory = recordFactory;
 function recordFactory(meta) {
     meta.fld = meta.fld || {};
+    meta.sublists = meta.sublists || {};
+    meta.fld.externalid = 'externalid';
+    meta.fld.internalid = 'internalid';
     var __fldInverseMemo;
     function fldInverse() {
         if (__fldInverseMemo)
@@ -37,7 +40,9 @@ function recordFactory(meta) {
     var __sublists = meta.sublists || {};
     var __doCache = true;
     var __exposed = [];
-    var __customMethods = {};
+    var __customMethods = __preRegisterMethod[meta.code] || {};
+    if (__preRegisterMethod[meta.code])
+        delete __preRegisterMethod[meta.code];
     //_fieldCache : {} ,
     //_origin : null,
     //record : <nlobjRecord>null ,
@@ -88,13 +93,13 @@ function recordFactory(meta) {
             ftextraw: function (name) {
                 var field = fldInverse()[name];
                 if (!field)
-                    throw nlapiCreateError('ftextraw', "Field " + name + " not fouund.");
+                    throw nlapiCreateError('ftextraw', "Field " + name + " not found.");
                 return rec.ftext(field);
             },
             fraw: function (name) {
                 var field = fldInverse()[name];
                 if (!field)
-                    throw nlapiCreateError('fraw', "Field " + name + " not fouund.");
+                    throw nlapiCreateError('fraw', "Field " + name + " not found.");
                 return rec.f(field);
             },
             fjoin: function (src, field) {
@@ -112,6 +117,12 @@ function recordFactory(meta) {
                 state.submitCache = state.submitCache || {};
                 state.submitCache[field] = value;
                 return rec;
+            },
+            fsetraw: function (name, value) {
+                var field = fldInverse()[name];
+                if (!field)
+                    throw nlapiCreateError('fraw', "Field " + name + " not found.");
+                return rec.fset(field, value);
             },
             put: function (data) {
                 if (Array.isArray(data))
@@ -331,10 +342,28 @@ function recordFactory(meta) {
         meta: meta,
         idField: meta.idField || 'id'
     };
+    __moduleCache[meta.code] = Static;
     return Static;
 }
 exports.recordFactory = recordFactory;
 var dummyStatic = null && recordFactory(1);
+var __moduleCache = {};
+var __preRegisterMethod = {};
+function module(code) {
+    if (__moduleCache[code])
+        return __moduleCache[code];
+    __preRegisterMethod[code] = {};
+    var Stub = {
+        stub: true,
+        registerMethod: function (name, method) {
+            __preRegisterMethod[code][name] = method;
+        },
+        get code() { return code; },
+    };
+    __moduleCache[code] = Stub;
+    return __moduleCache[code];
+}
+exports.module = module;
 var _callers = {
     Id: {
         f: function (rec, field) { return nlapiLookupField(rec.meta.code, rec.id, field); },

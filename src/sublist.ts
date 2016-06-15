@@ -1,23 +1,25 @@
 //implementação parcial por enquanto
 import rtape = require('./recordtape')
 
-export function fromRtape(parentRtape:rtape.tRecord, childRtapeStatic:any, slname:string) {
+export function fromRtape(parentRtape:rtape.tRecord, childRtapeStatic:any, slRef:string) {
 
     if (parentRtape.state.origin != 'record') throw nlapiCreateError('sublist', 'not implemented')
 
     var objRecord = parentRtape.state.record
+    var slName = parentRtape.meta.sublists[slRef]
+    if (!slName) throw nlapiCreateError('sublist', `Sublist ref ${slRef} not found.`)
 
-    return {
+    var objSublist = {
         count() : number {
-            return objRecord.getLineItemCount(slname)
+            return objRecord.getLineItemCount(slName)
         } ,
 
         value(field:string, line:number) : string {
-            return objRecord.getLineItemValue(slname,field,line)
+            return objRecord.getLineItemValue(slName,field,line)
         } ,
 
         text(field:string, line:number) : string {
-            return objRecord.getLineItemText(slname,field,line)
+            return objRecord.getLineItemText(slName,field,line)
         } ,
 
         idFromLine(line) {
@@ -25,9 +27,22 @@ export function fromRtape(parentRtape:rtape.tRecord, childRtapeStatic:any, slnam
         } ,
 
         lineFromId(id) {
-            return objRecord.findLineItemValue(slname, childRtapeStatic.idField, id)
+            //não funciona direito
+            //return objRecord.findLineItemValue(slName, childRtapeStatic.idField, id)
+            var count = this.count();
+            var out = -1;
+            for ( var it = 1 ; it <= count ; it++ ) {
+                let value = objSublist.value(childRtapeStatic.idField, it)
+                if (value == id) {
+                    out = it;
+                    break
+                }
+            }
+            return out;
         }
     }
+
+    return objSublist
 
 }
 

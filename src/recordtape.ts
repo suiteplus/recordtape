@@ -54,7 +54,8 @@ export interface tRecord {
     ftext(field:string) : string;
     ftextraw(field:string) : string;
     fjoin(src:string, field:string) : string;
-    fset(src:string,field:string) : tRecord;
+    fset(name:string,value:string) : tRecord;
+    fsetraw(src:string, value:string) : tRecord;
     put(src:any) : tRecord;
     json() : any;
     submit() : tRecord;
@@ -74,6 +75,9 @@ export var factory = recordFactory;
 export function recordFactory(meta:FactoryMeta) {
 
     meta.fld = meta.fld || {}
+    meta.sublists = meta.sublists || {}
+    meta.fld.externalid = 'externalid'
+    meta.fld.internalid = 'internalid'
 
     var __fldInverseMemo
     function fldInverse() {
@@ -88,7 +92,8 @@ export function recordFactory(meta:FactoryMeta) {
     var __sublists = meta.sublists || {}
     var __doCache = true
     var __exposed = []
-    var __customMethods = {}
+    var __customMethods = __preRegisterMethod[meta.code] || {}
+    if (__preRegisterMethod[meta.code]) delete __preRegisterMethod[meta.code]
     //_fieldCache : {} ,
     //_origin : null,
     //record : <nlobjRecord>null ,
@@ -141,13 +146,13 @@ export function recordFactory(meta:FactoryMeta) {
 
             ftextraw(name:string) {
                 var field = fldInverse()[name]
-                if (!field) throw nlapiCreateError('ftextraw', `Field ${name} not fouund.`)
+                if (!field) throw nlapiCreateError('ftextraw', `Field ${name} not found.`)
                 return rec.ftext(field)                
             } ,
 
             fraw(name:string) {
                 var field = fldInverse()[name]
-                if (!field) throw nlapiCreateError('fraw', `Field ${name} not fouund.`)
+                if (!field) throw nlapiCreateError('fraw', `Field ${name} not found.`)
                 return rec.f(field)
             } ,
 
@@ -165,6 +170,12 @@ export function recordFactory(meta:FactoryMeta) {
                 state.submitCache = state.submitCache || {};
                 state.submitCache[field] = value;
                 return rec;
+            } ,
+
+            fsetraw(name, value) {
+                var field = fldInverse()[name]
+                if (!field) throw nlapiCreateError('fraw', `Field ${name} not found.`)
+                return rec.fset(field, value)
             } ,
 
 
@@ -419,12 +430,31 @@ export function recordFactory(meta:FactoryMeta) {
 
     };
 
+    __moduleCache[meta.code] = Static
     return Static
 
 }
 
 var dummyStatic = null && recordFactory(<any>1)
 export type RtapeStatic = typeof dummyStatic
+
+
+var __moduleCache = {}
+var __preRegisterMethod = {}
+export function module(code:string) {
+    if (__moduleCache[code]) return __moduleCache[code]
+    __preRegisterMethod[code] = {}
+    var Stub = {
+        stub : true ,
+        registerMethod( name:string , method ) {
+            __preRegisterMethod[code][name] = method
+        } ,
+        get code() { return code } ,
+    }
+    __moduleCache[code] = Stub
+    return __moduleCache[code];
+}
+
 
 interface Caller {
     f(rec:tRecord,field:string) : string;
