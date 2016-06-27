@@ -2,7 +2,7 @@
   "name": "recordtape",
   "version": "2.0.0",
   "description": "recordtype wrapper",
-  "main": "src/record.js",
+  "main": "intermediate/recordtape.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
