@@ -4,10 +4,13 @@ declare var GLOBALS;
 var INUMBER = Math.ceil(Math.random() * 1000);
 var lastprofile : Date;
 
-function log(message) {
-    var out = message;
-    if ( typeof message == "object" ) out = JSON.stringify(message);
-    nlapiLogExecution("DEBUG",`${INUMBER} console.log` , out);
+function log(...message) {
+    var o = ''
+    message.forEach( m => {
+        if ( typeof m == "object" ) o += ' ' + JSON.stringify(m);
+        else o += ' ' + m
+    })
+    nlapiLogExecution("DEBUG",`${INUMBER} console.log` , o);
 }
 
 function profile(description?:string) {

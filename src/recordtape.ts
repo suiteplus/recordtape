@@ -210,7 +210,7 @@ export function recordFactory(meta:FactoryMeta) {
                 return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             } ,
 
-            sublist(name:string,tgtclass:RtapeStatic, opts? : {allFields:boolean} ) {
+            sublist(name:string,tgtclass:RtapeStatic, opts? : {allFields?:boolean} ) {
                 opts = opts || {}
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.')
