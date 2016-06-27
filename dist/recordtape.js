@@ -351,7 +351,8 @@ function recordFactory(meta) {
                     delete _cache[(meta.code + '|' + state.id)];
                 return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             },
-            sublist: function (name, tgtclass) {
+            sublist: function (name, tgtclass, opts) {
+                opts = opts || {};
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.');
                 }
@@ -368,9 +369,19 @@ function recordFactory(meta) {
                     return out;
                 }
                 else {
-                    if (field.substr(0, 'recmach'.length) == 'recmach')
+                    if (field.substr(0, 'recmach'.length) == 'recmach') {
                         field = field.substr('recmach'.length);
-                    var res = nlapiSearchRecord(tgtclass.meta.code, null, [field, 'anyof', state.id], Search.cols(__fieldConf[tgtclass.meta.code] || [])) || [];
+                    }
+                    var cols = [];
+                    if (opts.allFields) {
+                        for (var it_1 in meta.fld) {
+                            cols.push(it_1);
+                        }
+                    }
+                    else {
+                        cols = __fieldConf[tgtclass.meta.code] || [];
+                    }
+                    var res = nlapiSearchRecord(tgtclass.meta.code, null, [field, 'anyof', state.id], Search.cols(cols)) || [];
                     return res.map(function (r) {
                         return tgtclass.fromSearchResult(r);
                     });
@@ -567,7 +578,10 @@ function module(code) {
 exports.module = module;
 var _callers = {
     Id: {
-        f: function (rec, field) { return nlapiLookupField(rec.meta.code, rec.id, field); },
+        f: function (rec, field) {
+            console.log('lookupField ', field);
+            return nlapiLookupField(rec.meta.code, rec.id, field);
+        },
         ftext: function (rec, field) {
             throw nlapiCreateError('ftext', 'not implemented');
         },

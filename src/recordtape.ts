@@ -210,7 +210,8 @@ export function recordFactory(meta:FactoryMeta) {
                 return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             } ,
 
-            sublist(name:string,tgtclass:RtapeStatic) {
+            sublist(name:string,tgtclass:RtapeStatic, opts? : {allFields:boolean} ) {
+                opts = opts || {}
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.')
                 }
@@ -227,11 +228,20 @@ export function recordFactory(meta:FactoryMeta) {
                     return out;
                 }
                 else {
-                    if (field.substr(0, 'recmach'.length) == 'recmach')
+                    if (field.substr(0, 'recmach'.length) == 'recmach') {
                         field = field.substr('recmach'.length);
+                    }
+                    var cols = []
+                    if (opts.allFields) {
+                        for (let it in meta.fld) {
+                            cols.push(it)
+                        }
+                    } else {
+                        cols = __fieldConf[tgtclass.meta.code] || []
+                    }
                     var res = nlapiSearchRecord(tgtclass.meta.code, null, 
                         [field, 'anyof', state.id],
-                        Search.cols(__fieldConf[tgtclass.meta.code] || [])) || [];
+                        Search.cols(cols)) || [];
                     return res.map(function (r) {
                         return tgtclass.fromSearchResult(r);
                     });
@@ -464,7 +474,10 @@ interface Caller {
 
 var _callers = {
     Id: <Caller>{
-        f: function (rec, field) { return nlapiLookupField(rec.meta.code, rec.id, field); },
+        f: function (rec, field) {
+            console.log('lookupField ', field) 
+            return nlapiLookupField(rec.meta.code, rec.id, field);
+        },
         ftext(rec,field) {
             throw nlapiCreateError('ftext', 'not implemented')
         },
