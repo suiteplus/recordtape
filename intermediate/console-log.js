@@ -2,6 +2,7 @@
 //instance identifier for logs
 var INUMBER = Math.ceil(Math.random() * 1000);
 var lastprofile;
+var logcount = 1;
 function log() {
     var message = [];
     for (var _i = 0; _i < arguments.length; _i++) {
@@ -14,7 +15,7 @@ function log() {
         else
             o += ' ' + m;
     });
-    nlapiLogExecution("DEBUG", INUMBER + " console.log", o);
+    nlapiLogExecution("DEBUG", INUMBER + " console.log " + o, logcount++);
 }
 function profile(description) {
     if (lastprofile)

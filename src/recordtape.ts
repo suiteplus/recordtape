@@ -29,6 +29,7 @@ interface FactoryMeta {
     fld? : any;
     idField? : string;
     sublists? : any;
+    unique? : any;
 } 
 
 
@@ -78,6 +79,7 @@ export function recordFactory(meta:FactoryMeta) {
     meta.sublists = meta.sublists || {}
     meta.fld.externalid = 'externalid'
     meta.fld.internalid = 'internalid'
+    meta.unique = meta.unique || {}
 
     var __fldInverseMemo
     function fldInverse() {
@@ -121,9 +123,10 @@ export function recordFactory(meta:FactoryMeta) {
                 var found = ~fields.indexOf(field);
                 //se houver fieldconf, carregar todos os campos para o cache
                 if (fields.length && found) {
-                    fields.forEach(function (f) {
-                        state.fieldCache[f] = state.callers.f(rec, f);
-                    });
+                    let resp = state.callers.fs(rec, fields)
+                    for (let it in resp) {
+                        state.fieldCache[it] = resp[it];
+                    }
                     return state.fieldCache[field];
                 }
                 else {
@@ -198,8 +201,28 @@ export function recordFactory(meta:FactoryMeta) {
             } ,
 
 
-            submit() {
+            submit(opts? : {noUniqueCheck?:boolean}) {
                 _cache[(meta.code + '|' + rec.id)] = rec;
+                if (rec.id === null && !opts.noUniqueCheck) {
+                    for ( let it in meta.unique ) {
+                        var fields : string[] = meta.unique[it]
+                        var anyempty = fields.some( f => {
+                            return !state.fieldCache[f]
+                        });
+                        if (anyempty) continue;
+                        let _expr = fields.map( f => {
+                            return [ f , 'anyof' , state.fieldCache[f] ]
+                        })
+                        let expr = []
+                        for (let it2 = 0; it2 < _expr.length; it2++) {
+                            expr.push(_expr[it2])
+                            if (Number(it2) < _expr.length-1) expr.push('and')
+                        }
+                        let search = Static.search(expr).run()
+                        if (search.length) throw nlapiCreateError('RTAPE_CONSTRAINT',`Record create constraint failed ` +
+                            `for key ${JSON.stringify(fields)} when attempting to save ${JSON.stringify(state.fieldCache)}`);
+                    }
+                }
                 state.callers.submit(rec);
                 return rec;
             } ,
@@ -211,7 +234,7 @@ export function recordFactory(meta:FactoryMeta) {
             } ,
 
             sublist(name:string,tgtclass:RtapeStatic, opts? : {allFields?:boolean} ) {
-                opts = opts || {}
+                opts = opts || { allFields : true }
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.')
                 }
@@ -233,8 +256,8 @@ export function recordFactory(meta:FactoryMeta) {
                     }
                     var cols = []
                     if (opts.allFields) {
-                        for (let it in meta.fld) {
-                            cols.push(it)
+                        for (let it in tgtclass.fld) {
+                            cols.push(tgtclass.fld[it])
                         }
                     } else {
                         cols = __fieldConf[tgtclass.meta.code] || []
@@ -377,7 +400,7 @@ export function recordFactory(meta:FactoryMeta) {
         } ,
 
 
-        search(arg1, arg2, arg3) {
+        search(arg1?, arg2?, arg3?) {
             var opts:any, filters:any, columns:any
             if (Array.isArray(arg1)) {
                 opts = {}
@@ -468,6 +491,7 @@ export function module(code:string) {
 
 interface Caller {
     f(rec:tRecord,field:string) : string;
+    fs(rec:tRecord,fields:string[]) : {}
     ftext(rec:tRecord,field:string) : string;
     submit(rec:tRecord) : void;
 }
@@ -475,9 +499,12 @@ interface Caller {
 var _callers = {
     Id: <Caller>{
         f: function (rec, field) {
-            console.log('lookupField ', field) 
+            console.log('lookupField ', rec.meta.code, field, rec.id) 
             return nlapiLookupField(rec.meta.code, rec.id, field);
         },
+        fs: function(rec,fields) {
+            return <any>nlapiLookupField(rec.meta.code, rec.id, fields);
+        } ,
         ftext(rec,field) {
             throw nlapiCreateError('ftext', 'not implemented')
         },
@@ -496,6 +523,12 @@ var _callers = {
         f: function (rec, field) {
             return rec.state.record.getFieldValue(field);
         },
+        fs(rec,fields) {
+            return fields.reduce( (bef,curr) => {
+                bef[curr] = rec.state.record.getFieldValue(curr)
+                return bef
+            }, {})
+        } ,
         ftext(rec,field) {
             return rec.state.record.getFieldText(field)
         },
@@ -515,6 +548,24 @@ var _callers = {
             }
             return _callers.Id.f(rec, field);
         },
+        fs (rec, fields) {
+            var allcols = rec.state.result.getAllColumns() || []
+            var found = [], notFound = [];
+            fields.forEach( field => {
+                var has = (allcols.map( c => c.getName() )).indexOf(field) != -1
+                if (has) found.push(field)
+                else notFound.push(field)
+            })
+            var out = {}
+            found.forEach( field => {
+                out[field] = rec.state.result.getValue(field)
+            })
+            var _lookup = <any>nlapiLookupField(rec.code, rec.id, notFound)
+            for ( var it in _lookup ) {
+                out[it] = _lookup[it]
+            }
+            return out
+        } ,
         ftext(rec,field) {
             var allcols = rec.state.result.getAllColumns() || []
             if (~(allcols.map( c => c.getName() )).indexOf(field)) {
@@ -530,6 +581,12 @@ var _callers = {
         f: function (rec, field) {
             return rec.state.objSublist.value(field, rec.state.line);
         },
+        fs(rec, fields) {
+            return fields.reduce( (bef,curr) => {
+                bef[curr] = rec.state.objSublist.value(curr, rec.state.line);
+                return bef
+            }, {})
+        } ,
         ftext(rec,field) {
             return rec.state.objSublist.text(field, rec.state.line);
         } ,
@@ -551,6 +608,12 @@ var _callers = {
         f: function (rec, field) {
             return rec.state.window.nlapiGetFieldValue(field);
         },
+        fs (rec, fields) {
+            return fields.reduce( (bef,curr) => {
+                bef[curr] = rec.state.window.nlapiGetFieldValue(curr)
+                return bef
+            }, {})
+        } ,
         ftext(rec,field) {
             return rec.state.window.nlapiGetFieldText(field);
         } ,

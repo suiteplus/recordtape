@@ -26,12 +26,6 @@ var meta = {
 
 var Transaction = Record.factory(meta);
 
-Transaction.metadeDoSubtotal = function() {
-    
-    return Number(this.f('subtotal')) / 2;
-
-}
-
 ```
 
 ### Obtendo
@@ -40,7 +34,7 @@ Transaction.metadeDoSubtotal = function() {
 var t1 = Transaction.fromId(23);
 //chamadas de leitura usarão preferencialmente o lookupField
 var t2 = Transaction.fromRecord(rec);
-//recebe nlobjRecord ou número, força o uso de nlobjRecord
+//recebe nlobjRecord ou número
 var t3 = Transaction.fromSearchResult(res);
 //recebe nlobjSearchResult
 var t4 = Transaction.fromCurrentClient();
@@ -89,12 +83,15 @@ var terms = t1.sublist('salesterm', SalesTerm);
 
 ```javascript
 t1.fset('campo1', 1);
+t1.put({ campo2 : 2 , campo3 : 3 })
 t1.submit(); //necessário
 t1.delete();
 ```
 
 
 ### Expose
+
+Expõe campos como propriedades do objeto.
 
 ```javascript
 Transaction.expose(['entity']);
@@ -105,7 +102,28 @@ console.log(t1.entity);
 var obj = t1.json();
 ```
 
-Permite o acesso de leitura a determinadas propriedades diretamente no objeto sem o uso de `.f()`
-para o factory indicado.
+`.json(c?:string[])` extrai os itens expostos para um objeto plano.
 
-`.json()` extrai os itens expostos para um objeto plano.
+### Extendendo
+
+Amarrar uma função a uma "classe".
+
+```javascript
+Transaction.searchAllVoid = function() {
+    // ...
+```
+
+Amarrar uma função a uma "instância"
+
+```javascript
+Transaction.registerMethod('void' , function(transactionObject, date){
+    //...
+
+t.void(new Date());
+```
+O callback de `registerMethod` sempre recebe como primeiro argumento
+a instância.
+
+### Busca
+
+`RecordtapeStatic.search([options],[filters],[columns])`

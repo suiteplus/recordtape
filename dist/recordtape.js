@@ -6,6 +6,7 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
 //instance identifier for logs
 var INUMBER = Math.ceil(Math.random() * 1000);
 var lastprofile;
+var logcount = 1;
 function log() {
     var message = [];
     for (var _i = 0; _i < arguments.length; _i++) {
@@ -18,7 +19,7 @@ function log() {
         else
             o += ' ' + m;
     });
-    nlapiLogExecution("DEBUG", INUMBER + " console.log", o);
+    nlapiLogExecution("DEBUG", INUMBER + " console.log " + o, logcount++);
 }
 function profile(description) {
     if (lastprofile)
@@ -235,6 +236,7 @@ function recordFactory(meta) {
     meta.sublists = meta.sublists || {};
     meta.fld.externalid = 'externalid';
     meta.fld.internalid = 'internalid';
+    meta.unique = meta.unique || {};
     var __fldInverseMemo;
     function fldInverse() {
         if (__fldInverseMemo)
@@ -276,9 +278,10 @@ function recordFactory(meta) {
                 var found = ~fields.indexOf(field);
                 //se houver fieldconf, carregar todos os campos para o cache
                 if (fields.length && found) {
-                    fields.forEach(function (f) {
-                        state.fieldCache[f] = state.callers.f(rec, f);
-                    });
+                    var resp = state.callers.fs(rec, fields);
+                    for (var it_1 in resp) {
+                        state.fieldCache[it_1] = resp[it_1];
+                    }
                     return state.fieldCache[field];
                 }
                 else {
@@ -349,8 +352,31 @@ function recordFactory(meta) {
                 jsout.id = rec.id;
                 return jsout;
             },
-            submit: function () {
+            submit: function (opts) {
                 _cache[(meta.code + '|' + rec.id)] = rec;
+                if (rec.id === null && !opts.noUniqueCheck) {
+                    for (var it_2 in meta.unique) {
+                        var fields = meta.unique[it_2];
+                        var anyempty = fields.some(function (f) {
+                            return !state.fieldCache[f];
+                        });
+                        if (anyempty)
+                            continue;
+                        var _expr = fields.map(function (f) {
+                            return [f, 'anyof', state.fieldCache[f]];
+                        });
+                        var expr = [];
+                        for (var it2 = 0; it2 < _expr.length; it2++) {
+                            expr.push(_expr[it2]);
+                            if (Number(it2) < _expr.length - 1)
+                                expr.push('and');
+                        }
+                        var search = Static.search(expr).run();
+                        if (search.length)
+                            throw nlapiCreateError('RTAPE_CONSTRAINT', "Record create constraint failed " +
+                                ("for key " + JSON.stringify(fields) + " when attempting to save " + JSON.stringify(state.fieldCache)));
+                    }
+                }
                 state.callers.submit(rec);
                 return rec;
             },
@@ -360,7 +386,7 @@ function recordFactory(meta) {
                 return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             },
             sublist: function (name, tgtclass, opts) {
-                opts = opts || {};
+                opts = opts || { allFields: true };
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.');
                 }
@@ -382,8 +408,8 @@ function recordFactory(meta) {
                     }
                     var cols = [];
                     if (opts.allFields) {
-                        for (var it_1 in meta.fld) {
-                            cols.push(it_1);
+                        for (var it_3 in tgtclass.fld) {
+                            cols.push(tgtclass.fld[it_3]);
                         }
                     }
                     else {
@@ -587,8 +613,11 @@ exports.module = module;
 var _callers = {
     Id: {
         f: function (rec, field) {
-            console.log('lookupField ', field);
+            console.log('lookupField ', rec.meta.code, field, rec.id);
             return nlapiLookupField(rec.meta.code, rec.id, field);
+        },
+        fs: function (rec, fields) {
+            return nlapiLookupField(rec.meta.code, rec.id, fields);
         },
         ftext: function (rec, field) {
             throw nlapiCreateError('ftext', 'not implemented');
@@ -607,6 +636,12 @@ var _callers = {
     Record: {
         f: function (rec, field) {
             return rec.state.record.getFieldValue(field);
+        },
+        fs: function (rec, fields) {
+            return fields.reduce(function (bef, curr) {
+                bef[curr] = rec.state.record.getFieldValue(curr);
+                return bef;
+            }, {});
         },
         ftext: function (rec, field) {
             return rec.state.record.getFieldText(field);
@@ -627,6 +662,26 @@ var _callers = {
             }
             return _callers.Id.f(rec, field);
         },
+        fs: function (rec, fields) {
+            var allcols = rec.state.result.getAllColumns() || [];
+            var found = [], notFound = [];
+            fields.forEach(function (field) {
+                var has = (allcols.map(function (c) { return c.getName(); })).indexOf(field) != -1;
+                if (has)
+                    found.push(field);
+                else
+                    notFound.push(field);
+            });
+            var out = {};
+            found.forEach(function (field) {
+                out[field] = rec.state.result.getValue(field);
+            });
+            var _lookup = nlapiLookupField(rec.code, rec.id, notFound);
+            for (var it in _lookup) {
+                out[it] = _lookup[it];
+            }
+            return out;
+        },
         ftext: function (rec, field) {
             var allcols = rec.state.result.getAllColumns() || [];
             if (~(allcols.map(function (c) { return c.getName(); })).indexOf(field)) {
@@ -641,6 +696,12 @@ var _callers = {
     RecordSublist: {
         f: function (rec, field) {
             return rec.state.objSublist.value(field, rec.state.line);
+        },
+        fs: function (rec, fields) {
+            return fields.reduce(function (bef, curr) {
+                bef[curr] = rec.state.objSublist.value(curr, rec.state.line);
+                return bef;
+            }, {});
         },
         ftext: function (rec, field) {
             return rec.state.objSublist.text(field, rec.state.line);
@@ -662,6 +723,12 @@ var _callers = {
     Client: {
         f: function (rec, field) {
             return rec.state.window.nlapiGetFieldValue(field);
+        },
+        fs: function (rec, fields) {
+            return fields.reduce(function (bef, curr) {
+                bef[curr] = rec.state.window.nlapiGetFieldValue(curr);
+                return bef;
+            }, {});
         },
         ftext: function (rec, field) {
             return rec.state.window.nlapiGetFieldText(field);

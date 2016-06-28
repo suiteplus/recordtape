@@ -3,6 +3,7 @@ declare var GLOBALS;
 //instance identifier for logs
 var INUMBER = Math.ceil(Math.random() * 1000);
 var lastprofile : Date;
+var logcount = 1
 
 function log(...message) {
     var o = ''
@@ -10,7 +11,7 @@ function log(...message) {
         if ( typeof m == "object" ) o += ' ' + JSON.stringify(m);
         else o += ' ' + m
     })
-    nlapiLogExecution("DEBUG",`${INUMBER} console.log` , o);
+    nlapiLogExecution("DEBUG",`${INUMBER} console.log ${o}` , logcount++);
 }
 
 function profile(description?:string) {
