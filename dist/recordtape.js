@@ -314,8 +314,16 @@ function recordFactory(meta) {
                     throw nlapiCreateError('fraw', "Field " + name + " not found.");
                 return rec.f(field);
             },
-            fjoin: function (src, field) {
-                return rec.f(src + '.' + field);
+            fjoin: function (field, field2) {
+                if (!field)
+                    throw console.error('Record.fjoin recebeu parâmetro vazio.');
+                if (!meta.fld[field]) {
+                    throw console.error('Campo ' + field + ' não cadastrado.');
+                }
+                else {
+                    field = meta.fld[field];
+                }
+                return state.callers.f(rec, field + '.' + field2);
             },
             fset: function (field, value) {
                 if (Array.isArray(field))
