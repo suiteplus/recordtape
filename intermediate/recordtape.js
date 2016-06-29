@@ -113,7 +113,24 @@ function recordFactory(meta) {
                 else {
                     field = meta.fld[field];
                 }
-                return state.callers.f(rec, field + '.' + field2);
+                if (state.fieldCache[field + '.' + field2])
+                    return state.fieldCache[field + '.' + field2];
+                var fields = __fieldConf[meta.code] || [];
+                var found = ~fields.indexOf(field + '.' + field2);
+                //se houver fieldconf, carregar todos os campos para o cache
+                if (fields.length && found) {
+                    var resp = state.callers.fs(rec, fields);
+                    for (var it_2 in resp) {
+                        state.fieldCache[it_2] = resp[it_2];
+                    }
+                    return state.fieldCache[field + '.' + field2];
+                }
+                else {
+                    __fieldConf[meta.code] = __fieldConf[meta.code] || [];
+                    __fieldConf[meta.code].push(field + '.' + field2);
+                    state.fieldCache[field + '.' + field2] = state.callers.f(rec, field + '.' + field2);
+                    return state.fieldCache[field + '.' + field2];
+                }
             },
             fset: function (field, value) {
                 if (Array.isArray(field))
@@ -153,8 +170,8 @@ function recordFactory(meta) {
             submit: function (opts) {
                 _cache[(meta.code + '|' + rec.id)] = rec;
                 if (rec.id === null && !opts.noUniqueCheck) {
-                    for (var it_2 in meta.unique) {
-                        var fields = meta.unique[it_2];
+                    for (var it_3 in meta.unique) {
+                        var fields = meta.unique[it_3];
                         var anyempty = fields.some(function (f) {
                             return !state.fieldCache[f];
                         });
@@ -206,8 +223,8 @@ function recordFactory(meta) {
                     }
                     var cols = [];
                     if (opts.allFields) {
-                        for (var it_3 in tgtclass.fld) {
-                            cols.push(tgtclass.fld[it_3]);
+                        for (var it_4 in tgtclass.fld) {
+                            cols.push(tgtclass.fld[it_4]);
                         }
                     }
                     else {
@@ -415,6 +432,7 @@ var _callers = {
             return nlapiLookupField(rec.meta.code, rec.id, field);
         },
         fs: function (rec, fields) {
+            console.log('fs ', rec.meta.code, fields, rec.id);
             return nlapiLookupField(rec.meta.code, rec.id, fields);
         },
         ftext: function (rec, field) {

@@ -134,7 +134,7 @@ export function recordFactory(meta:FactoryMeta) {
                     __fieldConf[meta.code].push(field);
                     state.fieldCache[field] = state.callers.f(rec, field);
                     return state.fieldCache[field];
-                }            
+                }
             } ,
 
             ftext(field) {
@@ -165,8 +165,24 @@ export function recordFactory(meta:FactoryMeta) {
                     throw console.error('Campo ' + field + ' não cadastrado.');
                 } else {
                     field = meta.fld[field];
-                }                
-                return state.callers.f(rec, field + '.' + field2)
+                }
+                if (state.fieldCache[field+'.'+field2]) return state.fieldCache[field+'.'+field2];
+                var fields = __fieldConf[meta.code] || [];
+                var found = ~fields.indexOf(field+'.'+field2);
+                //se houver fieldconf, carregar todos os campos para o cache
+                if (fields.length && found) {
+                    let resp = state.callers.fs(rec, fields)
+                    for (let it in resp) {
+                        state.fieldCache[it] = resp[it];
+                    }
+                    return state.fieldCache[field+'.'+field2];
+                }
+                else {
+                    __fieldConf[meta.code] = __fieldConf[meta.code] || [];
+                    __fieldConf[meta.code].push(field+'.'+field2);
+                    state.fieldCache[field+'.'+field2] = state.callers.f(rec, field+'.'+field2);
+                    return state.fieldCache[field+'.'+field2];
+                }
             } ,
 
 
@@ -509,6 +525,7 @@ var _callers = {
             return nlapiLookupField(rec.meta.code, rec.id, field);
         },
         fs: function(rec,fields) {
+            console.log('fs ', rec.meta.code, fields, rec.id) 
             return <any>nlapiLookupField(rec.meta.code, rec.id, fields);
         } ,
         ftext(rec,field) {
