@@ -254,7 +254,11 @@ function recordFactory(meta) {
                 }
             });
         });
+        var _items = [];
         for (var it in __customMethods) {
+            _items.push(it);
+        }
+        _items.forEach(function (it) {
             rec[it] = function () {
                 var args = [];
                 for (var _i = 0; _i < arguments.length; _i++) {
@@ -263,7 +267,7 @@ function recordFactory(meta) {
                 args = [rec].concat(args);
                 return __customMethods[it].apply(rec, args);
             };
-        }
+        });
         return rec;
     }
     var Static = {
@@ -398,6 +402,7 @@ function recordFactory(meta) {
         registerMethod: function (name, method) {
             __customMethods[name] = method;
         },
+        get customMethods() { return __customMethods; },
         get code() { return meta.code; },
         get fld() { return meta.fld; },
         meta: meta,

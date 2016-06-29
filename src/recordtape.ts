@@ -314,12 +314,16 @@ export function recordFactory(meta:FactoryMeta) {
             })
         })
 
+        let _items = [];
         for ( var it in __customMethods ) {
+            _items.push(it)
+        }
+        _items.forEach( it => {
             rec[it] = (...args) => {
                 args = [ rec, ...args ]
                 return __customMethods[it].apply(rec, args)
             }
-        }
+        })
 
         return rec
     }
@@ -475,6 +479,8 @@ export function recordFactory(meta:FactoryMeta) {
         registerMethod( name:string , method ) {
             __customMethods[name] = method;
         } ,
+
+        get customMethods() { return __customMethods } ,
 
         get code() { return meta.code } ,
         get fld() { return meta.fld } ,
