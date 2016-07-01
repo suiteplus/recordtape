@@ -1,7 +1,7 @@
 "use strict";
 //instance identifier for logs
 var INUMBER = Math.ceil(Math.random() * 1000);
-var lastprofile;
+var lastprofile, lastUsage;
 var logcount = 1;
 function log() {
     var message = [];
@@ -15,12 +15,16 @@ function log() {
         else
             o += ' ' + m;
     });
-    nlapiLogExecution("DEBUG", INUMBER + " console.log " + o, logcount++);
+    nlapiLogExecution("DEBUG", INUMBER + " console.log " + logcount++ + " " + String(o).substr(0, 15), o);
 }
 function profile(description) {
+    var usg = nlapiGetContext().getRemainingUsage();
+    if (!lastUsage)
+        lastUsage = usg;
     if (lastprofile)
-        nlapiLogExecution("DEBUG", INUMBER + " Profiling: " + description, Number(new Date()) - Number(lastprofile));
+        nlapiLogExecution("DEBUG", INUMBER + " Profiling: " + description, "Time(ms): " + (Number(new Date()) - Number(lastprofile)) + " Usage:" + (lastUsage - usg));
     lastprofile = new Date();
+    lastUsage = usg;
 }
 function logerror(txt) {
     var out = txt;
@@ -43,10 +47,24 @@ function debug() {
     }
     nlapiLogExecution('DEBUG', 'debug', out);
 }
+function $stackTrace(err) {
+    err = err || {};
+    if (!err['getStackTrace']) {
+        return err['stack'] || '';
+    }
+    var stack = err.getStackTrace();
+    var out = '';
+    for (var it = 0; it < stack.length; it++) {
+        out += stack[it] + ' -- ';
+    }
+    log(out);
+    return out;
+}
 if (typeof console === 'undefined' && typeof GLOBALS !== 'undefined') {
     GLOBALS.console = {};
     GLOBALS.console.log = log;
     GLOBALS.console.debug = debug;
     GLOBALS.console.profile = profile;
     GLOBALS.console.error = logerror;
+    GLOBALS.console.$stackTrace = $stackTrace;
 }

@@ -5,7 +5,7 @@ require=(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof requ
 "use strict";
 //instance identifier for logs
 var INUMBER = Math.ceil(Math.random() * 1000);
-var lastprofile;
+var lastprofile, lastUsage;
 var logcount = 1;
 function log() {
     var message = [];
@@ -19,12 +19,16 @@ function log() {
         else
             o += ' ' + m;
     });
-    nlapiLogExecution("DEBUG", INUMBER + " console.log " + o, logcount++);
+    nlapiLogExecution("DEBUG", INUMBER + " console.log " + logcount++ + " " + String(o).substr(0, 15), o);
 }
 function profile(description) {
+    var usg = nlapiGetContext().getRemainingUsage();
+    if (!lastUsage)
+        lastUsage = usg;
     if (lastprofile)
-        nlapiLogExecution("DEBUG", INUMBER + " Profiling: " + description, Number(new Date()) - Number(lastprofile));
+        nlapiLogExecution("DEBUG", INUMBER + " Profiling: " + description, "Time(ms): " + (Number(new Date()) - Number(lastprofile)) + " Usage:" + (lastUsage - usg));
     lastprofile = new Date();
+    lastUsage = usg;
 }
 function logerror(txt) {
     var out = txt;
@@ -47,16 +51,31 @@ function debug() {
     }
     nlapiLogExecution('DEBUG', 'debug', out);
 }
+function $stackTrace(err) {
+    err = err || {};
+    if (!err['getStackTrace']) {
+        return err['stack'] || '';
+    }
+    var stack = err.getStackTrace();
+    var out = '';
+    for (var it = 0; it < stack.length; it++) {
+        out += stack[it] + ' -- ';
+    }
+    log(out);
+    return out;
+}
 if (typeof console === 'undefined' && typeof GLOBALS !== 'undefined') {
     GLOBALS.console = {};
     GLOBALS.console.log = log;
     GLOBALS.console.debug = debug;
     GLOBALS.console.profile = profile;
     GLOBALS.console.error = logerror;
+    GLOBALS.console.$stackTrace = $stackTrace;
 }
 
 },{}],2:[function(require,module,exports){
 "use strict";
+var Rtape = require('./recordtape');
 function search(opts, rtape, filters, columns) {
     opts = opts || {};
     columns = columns || [];
@@ -74,12 +93,12 @@ function search(opts, rtape, filters, columns) {
                     var split = item.split('.');
                     var p0 = rtape.meta.fld[split[0]];
                     if (!p0)
-                        throw nlapiCreateError('transformFilters-2', "Field " + p0 + " not found");
+                        throw nlapiCreateError('TRANSFORM_FILTERS_2', "Field " + p0 + " not found");
                     return "p0." + split[1];
                 }
                 var out = rtape.meta.fld[item];
                 if (!out)
-                    throw nlapiCreateError('transformFilters-1', "Field " + item + " not found");
+                    throw nlapiCreateError('TRANSFORM_FILTERS_1', "Field " + item + " not found");
                 return out;
             }
             else if (idx == 1 || idx == 2) {
@@ -91,9 +110,13 @@ function search(opts, rtape, filters, columns) {
         return columns.map(function (coluna) {
             if (typeof coluna == "string") {
                 var split = (coluna).split(".");
-                if (split[1])
-                    return new nlobjSearchColumn(split[1], split[0]);
-                return new nlobjSearchColumn(split[0]);
+                var src = rtape.meta.fld[split[0]];
+                if (!src)
+                    throw nlapiCreateError('SEARCH', "Field " + split[0] + " not found in mapping from " + rtape.meta.code);
+                if (split[1]) {
+                    return new nlobjSearchColumn(split[1], src);
+                }
+                return new nlobjSearchColumn(src);
             }
             else if (coluna instanceof nlobjSearchColumn) {
                 return coluna;
@@ -103,10 +126,32 @@ function search(opts, rtape, filters, columns) {
         });
     }
     if (opts.allFields) {
-        columns = [];
+        var fieldmap_1 = {};
         for (var it in rtape.meta.fld) {
-            columns.push(new nlobjSearchColumn(rtape.meta.fld[it]));
+            fieldmap_1[it] = true;
         }
+        var inverse = rtape.fldInverse();
+        Rtape.__fieldConf[rtape.meta.code] = Rtape.__fieldConf[rtape.meta.code] || [];
+        Rtape.__fieldConf[rtape.meta.code].forEach(function (it) {
+            var toset;
+            if (it.indexOf('.') != -1) {
+                var split = it.split('.');
+                if (!inverse[split[0]])
+                    throw nlapiCreateError('SEARCH_2', "Field " + split[0] + " not found in mapping from " + rtape.meta.code);
+                toset = inverse[split[0]] + '.' + split[1];
+            }
+            else {
+                toset = inverse[it];
+                if (!toset)
+                    throw nlapiCreateError('SEARCH_3', "Field " + it + " not found in mapping from " + rtape.meta.code);
+            }
+            fieldmap_1[toset] = true;
+        });
+        columns = [];
+        for (var it in fieldmap_1) {
+            columns.push(it);
+        }
+        columns = (!opts.noTransformColumns) ? transformColumns(columns) : columns;
     }
     var search = {
         get filters() {
@@ -165,7 +210,7 @@ function searchCols(colunas) {
 exports.searchCols = searchCols;
 exports.cols = searchCols;
 
-},{}],3:[function(require,module,exports){
+},{"./recordtape":"recordtape"}],3:[function(require,module,exports){
 "use strict";
 function fromRtape(parentRtape, childRtapeStatic, slRef) {
     if (parentRtape.state.origin != 'record')
@@ -207,6 +252,243 @@ function fromRtape(parentRtape, childRtapeStatic, slRef) {
 exports.fromRtape = fromRtape;
 var dummy = null && fromRtape(0, 1, 2);
 
+},{}],4:[function(require,module,exports){
+///<reference path="../typings/suitescript-1.d.ts"/>
+"use strict";
+var NON_BINARY_FILETYPES = [
+    'CSV',
+    'HTMLDOC',
+    'JAVASCRIPT',
+    'MESSAGERFC',
+    'PLAINTEXT',
+    'POSTSCRIPT',
+    'RTF',
+    'SMS',
+    'STYLESHEET',
+    'XMLDOC'
+];
+var EXT_TYPES = {
+    dwg: 'AUTOCAD',
+    bmp: 'BMPIMAGE',
+    csv: 'CSV',
+    xls: 'EXCEL',
+    swf: 'FLASH',
+    gif: 'GIFIMAGE',
+    gz: 'GZIP',
+    htm: 'HTMLDOC',
+    html: 'HTMLDOC',
+    ico: 'ICON',
+    js: 'JAVASCRIPT',
+    jpg: 'JPGIMAGE',
+    eml: 'MESSAGERFC',
+    mp3: 'MP3',
+    mpg: 'MPEGMOVIE',
+    mpp: 'MSPROJECT',
+    pdf: 'PDF',
+    pjpeg: 'PJPGIMAGE',
+    txt: 'PLAINTEXT',
+    png: 'PNGIMAGE',
+    ps: 'POSTSCRIPT',
+    ppt: 'POWERPOINT',
+    mov: 'QUICKTIME',
+    rtf: 'RTF',
+    sms: 'SMS',
+    css: 'STYLESHEET',
+    tiff: 'TIFFIMAGE',
+    vsd: 'VISIO',
+    doc: 'WORD',
+    xml: 'XMLDOC',
+    zip: 'ZIP'
+};
+//all folders with absolute path
+function allFolders() {
+    var _allFolders = bigSearch('folder', null, searchCols(['name', 'parent']));
+    var allFolders = _allFolders.map(searchResToCollection);
+    var foldersIdxParent = allFolders.reduce(function (bef, curr) {
+        curr.parent = curr.parent || '_ROOT';
+        bef[curr.parent] = bef[curr.parent] || [];
+        bef[curr.parent].push(curr);
+        return bef;
+    }, {});
+    foldersIdxParent['_ROOT'].forEach(function (item) {
+        function swipe(f) {
+            if (foldersIdxParent[f.id]) {
+                foldersIdxParent[f.id].forEach(function (inner) {
+                    inner.abspath = f.abspath + '/' + inner.name;
+                    swipe(inner);
+                });
+            }
+        }
+        item.abspath = "/" + item.name;
+        swipe(item);
+    });
+    return allFolders;
+}
+function _relativePath(src, relativeTo) {
+    var o;
+    //no backwards walking
+    if (src.substr(0, relativeTo.length) == relativeTo) {
+        o = src.substr(relativeTo.length);
+    }
+    else {
+        // a / b / c1 / d1
+        // a / b / d
+        var s_src = src.split('/').filter(function (i) { return i == true; });
+        var s_rel = relativeTo.split('/').filter(function (i) { return i == true; });
+        var count = 0, walk = '';
+        for (var x = 0; x < s_src.length; x++) {
+            if (s_rel[x] == s_src[x])
+                count++;
+            else {
+                walk += '/' + s_src[x];
+            }
+        }
+        for (var x = 0; x < count; x++) {
+            walk = '../' + walk;
+        }
+        o = walk;
+    }
+    return o || '.';
+}
+function pathInfo(pathIn, baseIn, createFolders) {
+    if (baseIn === void 0) { baseIn = '/'; }
+    if (createFolders === void 0) { createFolders = false; }
+    if (pathIn.charAt(0) == '/') {
+        pathIn = pathIn.substr(1);
+        baseIn = '/';
+    }
+    if (baseIn.substr(-1) != '/')
+        baseIn += '/';
+    var absPath = (baseIn + pathIn)
+        .replace(/[\\]/g, '/'); //windows fix
+    var _split = absPath.split('/');
+    var filename = _split[_split.length - 1];
+    _split.length = _split.length - 1;
+    var absBase = _split.join('/');
+    var absBaseSplit = _split.slice(1);
+    var hasWildcard = absBaseSplit.some(function (i) { return i == '**'; });
+    var _ext = filename ? filename.split('.')[1] : null;
+    var prevFolder = null;
+    if (!hasWildcard) {
+        absBaseSplit.forEach(function (folderName) {
+            var filters = [
+                ['name', 'is', folderName],
+                'and',
+                ['parent', 'anyof', (prevFolder || '@NONE@')]
+            ];
+            var res_folder = nlapiSearchRecord('folder', null, filters);
+            if (!res_folder && !createFolders) {
+                throw nlapiCreateError('FOLDER_NOT_FOUND', "Folder " + folderName + " not found!", true);
+            }
+            else if (!res_folder && createFolders) {
+                var newFolderRec = nlapiCreateRecord('folder');
+                newFolderRec.setFieldValue('name', folderName);
+                newFolderRec.setFieldValue('parent', prevFolder);
+                prevFolder = nlapiSubmitRecord(newFolderRec);
+            }
+            else {
+                prevFolder = res_folder[0].getId();
+            }
+        });
+        return {
+            folderid: prevFolder,
+            filename: filename ? filename : null,
+            fileext: _ext,
+            nsfileext: _ext ? EXT_TYPES[_ext] : null,
+            pathabsolute: filename ? absPath : null,
+            pathrelative: filename ? _relativePath(absPath, baseIn) : null,
+            baseabsolute: absBase,
+            baserelative: _relativePath(absBase, baseIn)
+        };
+    }
+    else {
+        var preWildcard_1 = '', postWildcard_1 = '', isAfter_1 = false;
+        absBaseSplit.forEach(function (item) {
+            if (item == '**')
+                isAfter_1 = true;
+            else if (isAfter_1)
+                postWildcard_1 += '/' + item;
+            else {
+                preWildcard_1 += '/' + item;
+            }
+        });
+        var found = allFolders().filter(function (folder) {
+            var pre = !preWildcard_1.length || (folder.abspath.substr(0, preWildcard_1.length) == preWildcard_1);
+            var post = !postWildcard_1.length || (folder.abspath.substr(-postWildcard_1.length) == postWildcard_1);
+            return pre && post;
+        }).map(function (folder) {
+            var pabs = filename ? folder.abspath + '/' + filename : null;
+            return {
+                folderid: folder.id,
+                pathabsolute: pabs,
+                pathrelative: filename ? _relativePath(pabs, baseIn) : null,
+                baseabsolute: folder.abspath,
+                baserelative: _relativePath(folder.abspath, baseIn)
+            };
+        });
+        return {
+            filename: filename ? filename : null,
+            fileext: _ext,
+            nsfileext: _ext ? EXT_TYPES[_ext] : null,
+            baseabsolute: preWildcard_1,
+            baserelative: _relativePath(preWildcard_1, baseIn),
+            tails: found
+        };
+    }
+}
+exports.pathInfo = pathInfo;
+exports.save = saveFile;
+function saveFile(path, contents) {
+    var info = pathInfo(path, undefined, true);
+    var file = nlapiCreateFile(info.filename, info.nsfileext || 'PLAINTEXT', contents);
+    file.setFolder(String(info.folderid));
+    return Number(nlapiSubmitFile(file));
+}
+exports.saveFile = saveFile;
+function bigSearch(recordtype, filters, columns) {
+    var res = nlapiCreateSearch(recordtype, filters, columns).runSearch();
+    var res_chunk, start_idx = 0, res_final = [];
+    do {
+        res_chunk = res.getResults(start_idx, start_idx + 1000) || [];
+        res_final = res_final.concat(res_chunk);
+        start_idx += 1000;
+    } while (res_chunk.length);
+    return res_final;
+}
+function searchCols(colunas) {
+    return colunas.map(function (coluna) {
+        if (typeof coluna == "string") {
+            var split = coluna.split(".");
+            if (split[1])
+                return new nlobjSearchColumn(split[1], split[0]);
+            return new nlobjSearchColumn(split[0]);
+        }
+        else if (coluna instanceof nlobjSearchColumn) {
+            return coluna;
+        }
+        else
+            throw nlapiCreateError("mapSearchCol", "Entrada inválida");
+    });
+}
+function searchResToCollection(result) {
+    var columns = result.getAllColumns() || [];
+    var ret = columns.reduce(function (prev, curr) {
+        var name, join;
+        if (join = curr.getJoin()) {
+            name = join + "." + curr.getName();
+        }
+        else {
+            name = curr.getName();
+        }
+        prev[name] = result.getValue(curr);
+        if (result.getText(curr))
+            prev.textref[name] = result.getText(curr);
+        return prev;
+    }, { textref: {} });
+    ret["id"] = result.getId();
+    return ret;
+}
+
 },{}],"recordtape":[function(require,module,exports){
 ///<reference path="../typings/suitescript-1.0.d.ts"/>
 ///<reference path="../typings/index.d.ts"/>
@@ -214,14 +496,15 @@ var dummy = null && fromRtape(0, 1, 2);
 require('./console-log');
 var Search = require('./search');
 var Sublist = require('./sublist');
+var File = require('netsuite-file');
 //record cache
 var _cache = {};
 //which fields to preload
-var __fieldConf = {};
+exports.__fieldConf = {};
 //init
 try {
-    var conf = nlapiGetContext().getSetting('SCRIPT', 'custscript_fieldconf');
-    __fieldConf = JSON.parse(conf) || {};
+    var conf = nlapiLoadFile('SuiteScripts/fieldconf.json').getValue();
+    exports.__fieldConf = JSON.parse(conf) || {};
 }
 catch (e) {
     console.error('ERROR', 'não carregou baseconf');
@@ -265,16 +548,16 @@ function recordFactory(meta) {
         var rec = {
             f: function (field) {
                 if (!field)
-                    throw console.error('Record.f recebeu parâmetro vazio.');
+                    throw nlapiCreateError('RTAPE_F1', 'Record.f recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_F2', 'Campo ' + field + ' não cadastrado.');
                 }
                 else {
                     field = meta.fld[field];
                 }
                 if (state.fieldCache[field])
                     return state.fieldCache[field];
-                var fields = __fieldConf[meta.code] || [];
+                var fields = exports.__fieldConf[meta.code] || [];
                 var found = ~fields.indexOf(field);
                 //se houver fieldconf, carregar todos os campos para o cache
                 if (fields.length && found) {
@@ -285,17 +568,17 @@ function recordFactory(meta) {
                     return state.fieldCache[field];
                 }
                 else {
-                    __fieldConf[meta.code] = __fieldConf[meta.code] || [];
-                    __fieldConf[meta.code].push(field);
+                    exports.__fieldConf[meta.code] = exports.__fieldConf[meta.code] || [];
+                    exports.__fieldConf[meta.code].push(field);
                     state.fieldCache[field] = state.callers.f(rec, field);
                     return state.fieldCache[field];
                 }
             },
             ftext: function (field) {
                 if (!field)
-                    throw console.error('Record.f recebeu parâmetro vazio.');
+                    throw nlapiCreateError('RTAPE_FTEXT1', 'Record.ftext recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_FTEXT2', 'Campo ' + field + ' não cadastrado.');
                 }
                 else {
                     field = meta.fld[field];
@@ -305,7 +588,7 @@ function recordFactory(meta) {
             ftextraw: function (name) {
                 var field = fldInverse()[name];
                 if (!field)
-                    throw nlapiCreateError('ftextraw', "Field " + name + " not found.");
+                    throw nlapiCreateError('RTAPE_FTEXTRAW', "Field " + name + " not found.");
                 return rec.ftext(field);
             },
             fraw: function (name) {
@@ -316,16 +599,16 @@ function recordFactory(meta) {
             },
             fjoin: function (field, field2) {
                 if (!field)
-                    throw console.error('Record.fjoin recebeu parâmetro vazio.');
+                    throw nlapiCreateError('RTAPE_FJOIN1', 'Record.fjoin recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_FJOIN2', 'Campo ' + field + ' não cadastrado.');
                 }
                 else {
                     field = meta.fld[field];
                 }
                 if (state.fieldCache[field + '.' + field2])
                     return state.fieldCache[field + '.' + field2];
-                var fields = __fieldConf[meta.code] || [];
+                var fields = exports.__fieldConf[meta.code] || [];
                 var found = ~fields.indexOf(field + '.' + field2);
                 //se houver fieldconf, carregar todos os campos para o cache
                 if (fields.length && found) {
@@ -336,17 +619,17 @@ function recordFactory(meta) {
                     return state.fieldCache[field + '.' + field2];
                 }
                 else {
-                    __fieldConf[meta.code] = __fieldConf[meta.code] || [];
-                    __fieldConf[meta.code].push(field + '.' + field2);
+                    exports.__fieldConf[meta.code] = exports.__fieldConf[meta.code] || [];
+                    exports.__fieldConf[meta.code].push(field + '.' + field2);
                     state.fieldCache[field + '.' + field2] = state.callers.f(rec, field + '.' + field2);
                     return state.fieldCache[field + '.' + field2];
                 }
             },
             fset: function (field, value) {
                 if (Array.isArray(field))
-                    throw console.error('fset não recebe array.');
+                    throw nlapiCreateError('RTAPE_FSET1', 'fset não recebe array.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_FSET2', 'Campo ' + field + ' não cadastrado.');
                 }
                 else
                     field = meta.fld[field];
@@ -410,8 +693,7 @@ function recordFactory(meta) {
                     delete _cache[(meta.code + '|' + state.id)];
                 return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             },
-            sublist: function (name, tgtclass, opts) {
-                opts = opts || { allFields: true };
+            sublist: function (name, tgtclass) {
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.');
                 }
@@ -431,19 +713,9 @@ function recordFactory(meta) {
                     if (field.substr(0, 'recmach'.length) == 'recmach') {
                         field = field.substr('recmach'.length);
                     }
-                    var cols = [];
-                    if (opts.allFields) {
-                        for (var it_4 in tgtclass.fld) {
-                            cols.push(tgtclass.fld[it_4]);
-                        }
-                    }
-                    else {
-                        cols = __fieldConf[tgtclass.meta.code] || [];
-                    }
-                    var res = nlapiSearchRecord(tgtclass.meta.code, null, [field, 'anyof', state.id], Search.cols(cols)) || [];
-                    return res.map(function (r) {
-                        return tgtclass.fromSearchResult(r);
-                    });
+                    field = tgtclass.fldInverse()[field];
+                    var res = tgtclass.search({ allFields: true, big: true }, [field, 'anyof', state.id]);
+                    return res.run();
                 }
             },
             get id() { return Number(state.id); },
@@ -587,14 +859,6 @@ function recordFactory(meta) {
                 return inst.f(field);
             };
         },
-        end: function () {
-            var sid = nlapiGetContext().getScriptId();
-            var did = 'customdeploy' + sid.substr('customscript'.length);
-            var res = nlapiSearchRecord('scriptdeployment', null, ['scriptid', 'is', did]);
-            var rec = nlapiLoadRecord('scriptdeployment', res[0].id);
-            rec.setFieldValue('custscript_fieldconf', JSON.stringify(__fieldConf));
-            nlapiSubmitRecord(rec);
-        },
         expose: function (fields) {
             (fields || []).forEach(function (field) {
                 if (!meta.fld[field])
@@ -615,6 +879,7 @@ function recordFactory(meta) {
         get customMethods() { return __customMethods; },
         get code() { return meta.code; },
         get fld() { return meta.fld; },
+        fldInverse: fldInverse,
         meta: meta,
         idField: meta.idField || 'id'
     };
@@ -643,11 +908,11 @@ exports.module = module;
 var _callers = {
     Id: {
         f: function (rec, field) {
-            console.log('lookupField ', rec.meta.code, field, rec.id);
+            //console.log('id lookup', field) 
             return nlapiLookupField(rec.meta.code, rec.id, field);
         },
         fs: function (rec, fields) {
-            console.log('fs ', rec.meta.code, fields, rec.id);
+            //console.log('id fs', fields)
             return nlapiLookupField(rec.meta.code, rec.id, fields);
         },
         ftext: function (rec, field) {
@@ -662,6 +927,7 @@ var _callers = {
             }
             nlapiSubmitField(rec.meta.code, String(rec.id), fields, values);
             rec.state.submitCache = {};
+            //console.log('id submit')
         }
     },
     Record: {
@@ -683,33 +949,59 @@ var _callers = {
             }
             rec.id = Number(nlapiSubmitRecord(rec.state.record));
             rec.state.submitCache = {};
+            //console.log('rec submit')
         }
     },
     Search: {
         f: function (rec, field) {
-            var allcols = rec.state.result.getAllColumns() || [];
-            if (~(allcols.map(function (c) { return c.getName(); })).indexOf(field)) {
-                return rec.state.result.getValue(field);
+            //console.log('search f')
+            var cs = rec.state.result.getAllColumns() || [];
+            var allcols = cs
+                .map(function (c) {
+                if (c.getJoin())
+                    return c.getJoin() + '.' + c.getName();
+                return c.getName();
+            });
+            var idx = allcols.indexOf(field);
+            if (~idx) {
+                return rec.state.result.getValue(cs[idx]);
             }
             return _callers.Id.f(rec, field);
         },
         fs: function (rec, fields) {
-            var allcols = rec.state.result.getAllColumns() || [];
+            var cs = rec.state.result.getAllColumns() || [];
+            var allcols = cs
+                .map(function (c) {
+                if (c.getJoin())
+                    return c.getJoin() + '.' + c.getName();
+                return c.getName();
+            });
             var found = [], notFound = [];
             fields.forEach(function (field) {
-                var has = (allcols.map(function (c) { return c.getName(); })).indexOf(field) != -1;
-                if (has)
-                    found.push(field);
+                var idx = allcols.indexOf(field);
+                if (idx != -1)
+                    found.push({
+                        id: field,
+                        obj: cs[idx],
+                    });
                 else
-                    notFound.push(field);
+                    notFound.push({
+                        id: field,
+                        obj: cs[idx]
+                    });
             });
             var out = {};
-            found.forEach(function (field) {
-                out[field] = rec.state.result.getValue(field);
+            found.forEach(function (column) {
+                out[column.id] = rec.state.result.getValue(column.obj);
             });
-            var _lookup = nlapiLookupField(rec.code, rec.id, notFound);
-            for (var it in _lookup) {
-                out[it] = _lookup[it];
+            if (notFound.length) {
+                var _lookup = nlapiLookupField(rec.code, rec.id, notFound.map(function (x) { return x.id; }));
+                for (var it in _lookup) {
+                    out[it] = _lookup[it];
+                }
+            }
+            if (notFound.length) {
+                console.log('search fs', notFound.length, rec.meta.code);
             }
             return out;
         },
@@ -721,6 +1013,7 @@ var _callers = {
             return _callers.Id.ftext(rec, field);
         },
         submit: function (rec) {
+            //console.log('search submit')
             return _callers.Id.submit(rec);
         }
     },
@@ -772,7 +1065,14 @@ var _callers = {
         }
     }
 };
+function end() {
+    try {
+        File.saveFile('/SuiteScripts/fieldconf.json', JSON.stringify(exports.__fieldConf));
+    }
+    catch (e) { }
+}
+exports.end = end;
 
-},{"./console-log":1,"./search":2,"./sublist":3}]},{},["recordtape"]);
+},{"./console-log":1,"./search":2,"./sublist":3,"netsuite-file":4}]},{},["recordtape"]);
 
 GLOBALS['recordtape'] = require('recordtape');

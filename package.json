@@ -13,6 +13,9 @@
   "author": "",
   "license": "ISC",
   "homepage": "https://bitbucket.org/willian_k/recordtape#readme",
+  "dependencies" : {
+    "netsuite-file": "git+https://github.com/wkrueger/netsuite-file.git"    
+  } ,
   "devDependencies": {
     "gulp": "^3.9.1",
     "gulp-scripts": "git@bitbucket.org:suiteplus/gulp-scripts.git",

@@ -4,15 +4,16 @@
 require('./console-log')
 import Search = require('./search')
 import Sublist = require('./sublist')
+var File = require('netsuite-file') 
 
 //record cache
 var _cache = {};
 //which fields to preload
-var __fieldConf = {};
+export var __fieldConf = {};
 
 //init
 try {
-    var conf = nlapiGetContext().getSetting('SCRIPT', 'custscript_fieldconf');
+    var conf = nlapiLoadFile('SuiteScripts/fieldconf.json').getValue()
     __fieldConf = JSON.parse(conf) || {};
 }
 catch (e) { 
@@ -111,9 +112,9 @@ export function recordFactory(meta:FactoryMeta) {
         var rec : tRecord = {
 
             f(field) {
-                if (!field) throw console.error('Record.f recebeu parâmetro vazio.');
+                if (!field) throw nlapiCreateError('RTAPE_F1','Record.f recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_F2','Campo ' + field + ' não cadastrado.');
                 } else {
                     field = meta.fld[field];
                 }
@@ -138,9 +139,9 @@ export function recordFactory(meta:FactoryMeta) {
             } ,
 
             ftext(field) {
-                if (!field) throw console.error('Record.f recebeu parâmetro vazio.');
+                if (!field) throw nlapiCreateError('RTAPE_FTEXT1','Record.ftext recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_FTEXT2','Campo ' + field + ' não cadastrado.');
                 } else {
                     field = meta.fld[field];
                 }
@@ -149,7 +150,7 @@ export function recordFactory(meta:FactoryMeta) {
 
             ftextraw(name:string) {
                 var field = fldInverse()[name]
-                if (!field) throw nlapiCreateError('ftextraw', `Field ${name} not found.`)
+                if (!field) throw nlapiCreateError('RTAPE_FTEXTRAW', `Field ${name} not found.`)
                 return rec.ftext(field)                
             } ,
 
@@ -160,9 +161,9 @@ export function recordFactory(meta:FactoryMeta) {
             } ,
 
             fjoin(field,field2) {
-                if (!field) throw console.error('Record.fjoin recebeu parâmetro vazio.');
+                if (!field) throw nlapiCreateError('RTAPE_FJOIN1','Record.fjoin recebeu parâmetro vazio.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_FJOIN2','Campo ' + field + ' não cadastrado.');
                 } else {
                     field = meta.fld[field];
                 }
@@ -187,9 +188,9 @@ export function recordFactory(meta:FactoryMeta) {
 
 
             fset(field, value) {
-                if (Array.isArray(field)) throw console.error('fset não recebe array.');
+                if (Array.isArray(field)) throw nlapiCreateError('RTAPE_FSET1','fset não recebe array.');
                 if (!meta.fld[field]) {
-                    throw console.error('Campo ' + field + ' não cadastrado.');
+                    throw nlapiCreateError('RTAPE_FSET2','Campo ' + field + ' não cadastrado.');
                 } else field = meta.fld[field];
                 state.fieldCache[field] = value;
                 state.submitCache = state.submitCache || {};
@@ -255,8 +256,7 @@ export function recordFactory(meta:FactoryMeta) {
                 return nlapiDeleteRecord(rec.meta.code, String(rec.id));
             } ,
 
-            sublist(name:string,tgtclass:RtapeStatic, opts? : {allFields?:boolean} ) {
-                opts = opts || { allFields : true }
+            sublist(name:string,tgtclass:RtapeStatic) {
                 if (!tgtclass) {
                     throw nlapiCreateError('sublist', 'Missing 2nd parameter.')
                 }
@@ -276,20 +276,9 @@ export function recordFactory(meta:FactoryMeta) {
                     if (field.substr(0, 'recmach'.length) == 'recmach') {
                         field = field.substr('recmach'.length);
                     }
-                    var cols = []
-                    if (opts.allFields) {
-                        for (let it in tgtclass.fld) {
-                            cols.push(tgtclass.fld[it])
-                        }
-                    } else {
-                        cols = __fieldConf[tgtclass.meta.code] || []
-                    }
-                    var res = nlapiSearchRecord(tgtclass.meta.code, null, 
-                        [field, 'anyof', state.id],
-                        Search.cols(cols)) || [];
-                    return res.map(function (r) {
-                        return tgtclass.fromSearchResult(r);
-                    });
+                    field = tgtclass.fldInverse()[field]
+                    var res = tgtclass.search({allFields:true, big:true}, [field, 'anyof', state.id] )
+                    return res.run()
                 }
             } ,
 
@@ -449,16 +438,6 @@ export function recordFactory(meta:FactoryMeta) {
         } ,
 
 
-        end() {
-            var sid = nlapiGetContext().getScriptId();
-            var did = 'customdeploy' + sid.substr('customscript'.length);
-            var res = nlapiSearchRecord('scriptdeployment', null, ['scriptid', 'is', did]);
-            var rec = nlapiLoadRecord('scriptdeployment', res[0].id);
-            rec.setFieldValue('custscript_fieldconf', JSON.stringify(__fieldConf));
-            nlapiSubmitRecord(rec);
-        } ,
-
-
         expose(fields) {
             (fields||[]).forEach( function(field) {
                 if (!meta.fld[field]) throw nlapiCreateError('recordExpose', 'Campo ' + field + ' não está definido neste registro.' );
@@ -484,6 +463,8 @@ export function recordFactory(meta:FactoryMeta) {
 
         get code() { return meta.code } ,
         get fld() { return meta.fld } ,
+
+        fldInverse : fldInverse ,
 
         meta : meta , 
 
@@ -527,11 +508,11 @@ interface Caller {
 var _callers = {
     Id: <Caller>{
         f: function (rec, field) {
-            console.log('lookupField ', rec.meta.code, field, rec.id) 
+            //console.log('id lookup', field) 
             return nlapiLookupField(rec.meta.code, rec.id, field);
         },
         fs: function(rec,fields) {
-            console.log('fs ', rec.meta.code, fields, rec.id) 
+            //console.log('id fs', fields)
             return <any>nlapiLookupField(rec.meta.code, rec.id, fields);
         } ,
         ftext(rec,field) {
@@ -546,6 +527,7 @@ var _callers = {
             }
             nlapiSubmitField(rec.meta.code, String(rec.id), fields, values);
             rec.state.submitCache = {};
+            //console.log('id submit')
         }
     },
     Record: <Caller>{
@@ -567,31 +549,59 @@ var _callers = {
             }
             rec.id = Number(nlapiSubmitRecord(rec.state.record));
             rec.state.submitCache = {};
+            //console.log('rec submit')
         }
     },
     Search: <Caller>{
-        f: function (rec, field) {
-            var allcols = rec.state.result.getAllColumns() || [] 
-            if (~(allcols.map( c => c.getName() )).indexOf(field)) {
-                return rec.state.result.getValue(field);
+        f (rec, field) {
+            //console.log('search f')
+            var cs = rec.state.result.getAllColumns() || []
+            var allcols = cs
+                .map( c => {
+                    if (c.getJoin()) return c.getJoin() + '.' + c.getName()
+                    return c.getName()
+                })
+            var idx = allcols.indexOf(field) 
+            if (~idx) {
+                return rec.state.result.getValue(cs[idx]);
             }
             return _callers.Id.f(rec, field);
         },
         fs (rec, fields) {
-            var allcols = rec.state.result.getAllColumns() || []
-            var found = [], notFound = [];
+            var cs = rec.state.result.getAllColumns() || []
+            var allcols = cs
+                .map( c => {
+                    if (c.getJoin()) return c.getJoin() + '.' + c.getName()
+                    return c.getName()                    
+                })
+            interface column {
+                id : string;
+                obj: nlobjSearchColumn
+            }
+            var found : column[] = [], notFound : column[] = [];
             fields.forEach( field => {
-                var has = (allcols.map( c => c.getName() )).indexOf(field) != -1
-                if (has) found.push(field)
-                else notFound.push(field)
+                var idx = allcols.indexOf(field)
+                if (idx != -1) found.push({
+                    id : field ,
+                    obj : cs[idx] ,
+                })
+                else notFound.push({
+                    id : field ,
+                    obj : cs[idx]
+                })
             })
             var out = {}
-            found.forEach( field => {
-                out[field] = rec.state.result.getValue(field)
+            found.forEach( column => {
+                out[column.id] = rec.state.result.getValue(column.obj)
             })
-            var _lookup = <any>nlapiLookupField(rec.code, rec.id, notFound)
-            for ( var it in _lookup ) {
-                out[it] = _lookup[it]
+            if (notFound.length) {
+                var _lookup = <any>nlapiLookupField(rec.code, rec.id, notFound.map( x => x.id ))
+                for ( var it in _lookup ) {
+                    out[it] = _lookup[it]
+                }
+            }
+            if(notFound.length) {
+                console.log('search fs', notFound.length, rec.meta.code)
             }
             return out
         } ,
@@ -603,6 +613,7 @@ var _callers = {
             return _callers.Id.ftext(rec, field);
         } ,
         submit: function (rec) {
+            //console.log('search submit')
             return _callers.Id.submit(rec);
         }
     },
@@ -654,3 +665,10 @@ var _callers = {
         }
     }
 };
+
+
+export function end() {
+    try {
+        File.saveFile('/SuiteScripts/fieldconf.json', JSON.stringify(__fieldConf))
+    } catch(e) { /* .. */ }
+}
