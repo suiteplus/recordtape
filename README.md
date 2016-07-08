@@ -1,10 +1,12 @@
 # recordtape
 
-"Recordtape" é um wrapper para registros (record types) do Suitescript.
+"Recordtape" is a wrapper for Netsuite Suitescript (1.0) record types.
+
+It aims at reducing keystrokes, provide structure and abstraction for simpler thinking.
 
 ### factory(opt)
 
-Define um tipo de registro.
+Declare a record type.
 
 ```javascript
 var Record = require('recordtape');
@@ -28,31 +30,30 @@ var Transaction = Record.factory(meta);
 
 ```
 
-### Obtendo
+### Creating
 
 ```javascript
 var t1 = Transaction.fromId(23);
-//chamadas de leitura usarão preferencialmente o lookupField
+//DB calls will use lookupField
 var t2 = Transaction.fromRecord(rec);
-//recebe nlobjRecord ou número
+//DB calls will use this nlobjRecord
 var t3 = Transaction.fromSearchResult(res);
-//recebe nlobjSearchResult
+//will use this result columns when possible, or falls back to lookupField
 var t4 = Transaction.fromCurrentClient();
-//tenta buscar dados do formulário atual usando API de Client
+//calls client form API
 var t5 = Transaction.create('invoice');
-//novo registro
+//new record. Parameter optional (used for record subtypes e.g. entity -> customer)
 ```
 
-Por padrão os registros são "cacheados", ou seja, uma chamada subsequente
-a um registro de mesmo tipo e ID trará o anteriormente usado.
+Records are cached by default. A subsequent call to a record with the same
+ID and type will reuse the previous one.
 
-### Leitura
+### Reading
 
 ```javascript
-//f de "field". Aceita os campos/nomes mapeados na declaração
-//do registro ou os IDs dos campos.
-var meuCampo = t1.f('meu_campo');
-var nome = t1.fjoin('entity','firstname');
+//f stands for "field"
+var myField = t1.f('my_field');
+var name = t1.fjoin('entity','firstname');
 var ibgec = _.compose(
     City.curryf('ibge_code'),
     Address.curryf('city'),
@@ -60,14 +61,44 @@ var ibgec = _.compose(
     )(t1.f('entity'))
 ```
 
-É efetuado cache na leitura dos campos.
-A lista de campos que são utilizados em um script são persistidos,
-e em execuções subsequentes todos os campos são lidos em uma chamada e
-posteriormente lidos do cache. Ex:
+Read fields are also cached.
+
+Recordtape keeps a list of which fields are used for each script instance.
+The next time you read from a new record, it fecthes all of these fields.   
+
+To persist this list for subsequent script calls, use `recordtape.end()`.
 
 ```javascript
-var f1 = r.f('campo1') //nlapiLookupField campo1,campo2 e campo3
-var f2 = r.f('campo2')  //campo2 já foi lido acima, apenas retorna
+var f1 = r.f('field1')  //nlapiLookupField field1,field2 and field3 into cache
+var f2 = r.f('field2')  //field2 is already in cache. Just get it
+```
+
+All of this caching thing has in mind that in Suitescript 
+the database calls are always responsible for most of the processing time.  
+
+Complete spec below (typescript interface):
+```typescript
+export interface tRecord {
+    f(field:string) : string;
+    fraw(field:string) : string;
+    ftext(field:string) : string;
+    ftextraw(field:string) : string;
+    fjoin(src:string, field:string) : string;
+    fset(name:string,value:string) : tRecord;
+    fsetraw(src:string, value:string) : tRecord;
+    put(src:any) : tRecord;
+    json() : any;
+    submit() : tRecord;
+    delete() : void;
+    sublist(name:string, clas:RtapeStatic) : tRecord[];
+
+    id : number;
+    state : internalState;
+    meta : FactoryMeta;
+    code : string;
+    fld : any;
+    getStatic() : RtapeStatic;
+}
 ```
 
 ### Sublist
