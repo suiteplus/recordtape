@@ -1,6 +1,6 @@
 {
   "name": "recordtape",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "recordtype wrapper",
   "main": "intermediate/recordtape.js",
   "scripts": {

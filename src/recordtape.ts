@@ -214,8 +214,8 @@ export function recordFactory(meta:FactoryMeta) {
             } ,
 
 
-            json() {
-                var jsout = __exposed.reduce( function(bef,field) {
+            json(fields?:string[]) {
+                var jsout = (fields||__exposed).reduce( function(bef,field) {
                     bef[field] = rec.f(field);
                     return bef;
                 }, {});

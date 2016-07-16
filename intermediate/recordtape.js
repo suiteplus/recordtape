@@ -160,8 +160,8 @@ function recordFactory(meta) {
                 }
                 return rec;
             },
-            json: function () {
-                var jsout = __exposed.reduce(function (bef, field) {
+            json: function (fields) {
+                var jsout = (fields || __exposed).reduce(function (bef, field) {
                     bef[field] = rec.f(field);
                     return bef;
                 }, {});
