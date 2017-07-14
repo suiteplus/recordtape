@@ -1,3 +1,5 @@
+Note: Abandoned/unfinished.
+
 # recordtape
 
 "Recordtape" is a wrapper for Netsuite Suitescript (1.0) record types.
